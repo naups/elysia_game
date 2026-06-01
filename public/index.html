@@ -3,14 +3,13 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Trivia Quiz Game</title>
+        <title>Trivia Quiz — Multiplayer</title>
         <style>
             * {
                 margin: 0;
                 padding: 0;
                 box-sizing: border-box;
             }
-
             body {
                 font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -20,33 +19,57 @@
                 align-items: center;
                 padding: 20px;
             }
-
             .container {
                 background: white;
                 border-radius: 20px;
                 box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                max-width: 600px;
+                max-width: 700px;
                 width: 100%;
                 overflow: hidden;
             }
-
             .header {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
                 padding: 20px;
                 text-align: center;
+                position: relative;
             }
-
             .header h1 {
                 font-size: 1.8em;
                 margin-bottom: 5px;
             }
-
             .header .score {
                 font-size: 1.2em;
                 opacity: 0.9;
             }
-
+            .header .user-info {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                margin-top: 8px;
+            }
+            .header .user-info img {
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                border: 2px solid white;
+            }
+            .logout-btn {
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                background: rgba(255, 255, 255, 0.2);
+                border: none;
+                color: white;
+                padding: 6px 14px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .logout-btn:hover {
+                background: rgba(255, 255, 255, 0.35);
+            }
             .progress-bar {
                 background: #e0e0e0;
                 height: 8px;
@@ -54,28 +77,26 @@
                 border-radius: 4px;
                 overflow: hidden;
             }
-
             .progress-fill {
                 background: #4caf50;
                 height: 100%;
                 transition: width 0.3s ease;
             }
-
             .content {
                 padding: 30px;
             }
-
-            /* Login Screen */
-            .login-screen {
-                text-align: center;
+            .screen {
+                display: none;
             }
-
-            .login-screen h2 {
+            .screen.active {
+                display: block;
+            }
+            h2 {
                 color: #333;
                 margin-bottom: 20px;
+                text-align: center;
             }
-
-            .login-screen input {
+            input[type="text"] {
                 width: 100%;
                 padding: 15px;
                 font-size: 16px;
@@ -84,12 +105,10 @@
                 margin-bottom: 15px;
                 transition: border-color 0.3s;
             }
-
-            .login-screen input:focus {
+            input[type="text"]:focus {
                 outline: none;
                 border-color: #667eea;
             }
-
             .btn {
                 width: 100%;
                 padding: 15px;
@@ -100,133 +119,295 @@
                 transition:
                     transform 0.2s,
                     box-shadow 0.2s;
+                margin-bottom: 10px;
             }
-
+            .btn:hover {
+                transform: translateY(-2px);
+            }
             .btn-primary {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
             }
-
             .btn-primary:hover {
-                transform: translateY(-2px);
                 box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
             }
-
             .btn-success {
                 background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
                 color: white;
             }
-
             .btn-success:hover {
-                transform: translateY(-2px);
                 box-shadow: 0 5px 20px rgba(76, 175, 80, 0.4);
             }
-
-            /* Quiz Screen */
-            .quiz-screen {
-                display: none;
+            .btn-danger {
+                background: linear-gradient(135deg, #ef5350 0%, #c62828 100%);
+                color: white;
             }
-
+            .btn-secondary {
+                background: #e0e0e0;
+                color: #333;
+            }
+            .btn-small {
+                width: auto;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            .error-msg {
+                color: #ef5350;
+                text-align: center;
+                margin-top: 10px;
+                min-height: 20px;
+            }
+            /* Login */
+            .login-screen {
+                text-align: center;
+            }
+            /* Lobby */
+            .lobby-actions {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+            .lobby-actions .btn {
+                flex: 1;
+            }
+            /* Room */
+            .room-code {
+                text-align: center;
+                font-size: 2em;
+                font-weight: bold;
+                color: #667eea;
+                letter-spacing: 8px;
+                margin: 15px 0;
+                padding: 15px;
+                background: #f5f5ff;
+                border-radius: 10px;
+            }
+            .player-list {
+                list-style: none;
+                margin: 15px 0;
+            }
+            .player-item {
+                display: flex;
+                align-items: center;
+                padding: 12px;
+                border-bottom: 1px solid #eee;
+                gap: 12px;
+            }
+            .player-item:last-child {
+                border-bottom: none;
+            }
+            .player-item img {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+            }
+            .player-name {
+                flex: 1;
+                font-weight: 600;
+            }
+            .player-badge {
+                font-size: 12px;
+                padding: 3px 8px;
+                border-radius: 12px;
+                font-weight: 600;
+            }
+            .badge-master {
+                background: #fff3e0;
+                color: #e65100;
+            }
+            .badge-ready {
+                background: #e8f5e9;
+                color: #2e7d32;
+            }
+            .badge-not-ready {
+                background: #ffebee;
+                color: #c62828;
+            }
+            .kick-btn {
+                background: #ef5350;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            /* Settings */
+            .settings-panel {
+                background: #f9f9f9;
+                border-radius: 12px;
+                padding: 20px;
+                margin: 15px 0;
+            }
+            .settings-panel h3 {
+                margin-bottom: 15px;
+                color: #555;
+            }
+            .setting-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+            }
+            .setting-row label {
+                font-weight: 500;
+                color: #555;
+            }
+            .setting-row select,
+            .setting-row input[type="number"] {
+                padding: 8px 12px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-size: 14px;
+            }
+            /* Quiz */
             .question-text {
                 font-size: 1.3em;
+                font-weight: 600;
                 color: #333;
-                margin-bottom: 25px;
-                line-height: 1.5;
+                margin-bottom: 20px;
+                text-align: center;
             }
-
             .options {
                 display: flex;
                 flex-direction: column;
-                gap: 12px;
+                gap: 10px;
             }
-
             .option-btn {
                 padding: 15px 20px;
                 font-size: 16px;
-                border: 2px solid #e0e0e0;
+                border: 2px solid #ddd;
                 border-radius: 10px;
                 background: white;
                 cursor: pointer;
                 text-align: left;
-                transition: all 0.3s;
+                transition: all 0.2s;
             }
-
             .option-btn:hover:not(.disabled) {
                 border-color: #667eea;
                 background: #f5f5ff;
             }
-
-            .option-btn.selected {
-                border-color: #667eea;
-                background: #e8eaff;
-            }
-
             .option-btn.correct {
-                border-color: #4caf50;
                 background: #e8f5e9;
+                border-color: #4caf50;
                 color: #2e7d32;
             }
-
             .option-btn.wrong {
-                border-color: #f44336;
                 background: #ffebee;
+                border-color: #ef5350;
                 color: #c62828;
             }
-
             .option-btn.disabled {
-                cursor: not-allowed;
+                cursor: default;
                 opacity: 0.7;
             }
-
             .feedback {
-                margin-top: 20px;
-                padding: 15px;
-                border-radius: 10px;
                 text-align: center;
-                font-size: 1.1em;
-                font-weight: bold;
-                display: none;
+                padding: 12px;
+                border-radius: 10px;
+                margin-top: 15px;
+                font-weight: 600;
+                min-height: 45px;
             }
-
             .feedback.correct {
-                display: block;
                 background: #e8f5e9;
                 color: #2e7d32;
             }
-
             .feedback.wrong {
-                display: block;
                 background: #ffebee;
                 color: #c62828;
             }
-
-            /* Result Screen */
-            .result-screen {
-                display: none;
+            .answer-queue {
                 text-align: center;
+                margin-top: 15px;
+                color: #888;
+                font-size: 14px;
             }
-
-            .result-screen h2 {
-                color: #333;
-                margin-bottom: 15px;
+            /* Summary */
+            .summary-screen h2 {
+                margin-bottom: 10px;
             }
-
-            .final-score {
-                font-size: 4em;
+            .winner-card {
+                text-align: center;
+                padding: 20px;
+                background: linear-gradient(135deg, #fff9c4 0%, #fff176 100%);
+                border-radius: 15px;
+                margin-bottom: 20px;
+            }
+            .winner-card .trophy {
+                font-size: 3em;
+            }
+            .winner-card .winner-name {
+                font-size: 1.5em;
                 font-weight: bold;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                margin: 20px 0;
+                margin: 5px 0;
             }
-
-            .result-message {
+            .ranking-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 15px 0;
+            }
+            .ranking-table th,
+            .ranking-table td {
+                padding: 10px;
+                text-align: left;
+                border-bottom: 1px solid #eee;
+            }
+            .ranking-table th {
+                color: #888;
+                font-size: 13px;
+            }
+            .rank-number {
+                font-weight: bold;
                 font-size: 1.2em;
-                color: #666;
-                margin-bottom: 30px;
+                width: 30px;
             }
-
+            .accuracy-bar {
+                display: inline-block;
+                height: 8px;
+                border-radius: 4px;
+                background: #4caf50;
+                margin-left: 8px;
+                vertical-align: middle;
+            }
+            .detail-toggle {
+                background: none;
+                border: none;
+                color: #667eea;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .detail-list {
+                display: none;
+                margin: 5px 0 10px 30px;
+                font-size: 14px;
+            }
+            .detail-list.show {
+                display: block;
+            }
+            .detail-item {
+                padding: 4px 0;
+            }
+            .detail-item.correct {
+                color: #2e7d32;
+            }
+            .detail-item.wrong {
+                color: #c62828;
+            }
+            /* Custom Questions */
+            .custom-q-form {
+                background: #f5f5ff;
+                padding: 15px;
+                border-radius: 10px;
+                margin: 10px 0;
+            }
+            .custom-q-form input {
+                width: 100%;
+                padding: 10px;
+                margin-bottom: 8px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+            }
             /* Loading */
             .loading {
                 display: flex;
@@ -234,30 +415,21 @@
                 align-items: center;
                 padding: 40px;
             }
-
             .spinner {
                 width: 40px;
                 height: 40px;
                 border: 4px solid #e0e0e0;
-                border-top-color: #667eea;
+                border-top: 4px solid #667eea;
                 border-radius: 50%;
-                animation: spin 1s linear infinite;
+                animation: spin 0.8s linear infinite;
             }
-
             @keyframes spin {
                 to {
                     transform: rotate(360deg);
                 }
             }
-
             .hidden {
                 display: none !important;
-            }
-
-            .error-msg {
-                color: #f44336;
-                margin-top: 10px;
-                font-size: 14px;
             }
         </style>
     </head>
@@ -265,8 +437,26 @@
         <div class="container">
             <div class="header">
                 <h1>🎮 Trivia Quiz</h1>
-                <div class="score" id="headerScore">Score: 0</div>
-                <div class="progress-bar">
+                <div class="score" id="headerScore" style="display: none">
+                    Score: 0
+                </div>
+                <div class="user-info" id="userInfo" style="display: none">
+                    <img id="userAvatar" src="" alt="avatar" />
+                    <span id="userName"></span>
+                </div>
+                <button
+                    class="logout-btn"
+                    id="logoutBtn"
+                    style="display: none"
+                    onclick="logout()"
+                >
+                    Logout
+                </button>
+                <div
+                    class="progress-bar"
+                    id="progressBar"
+                    style="display: none"
+                >
                     <div
                         class="progress-fill"
                         id="progressFill"
@@ -277,7 +467,7 @@
 
             <div class="content">
                 <!-- Login Screen -->
-                <div id="loginScreen" class="login-screen">
+                <div id="loginScreen" class="screen login-screen active">
                     <h2>Welcome to Trivia Quiz!</h2>
                     <input
                         type="text"
@@ -291,154 +481,810 @@
                     <div id="loginError" class="error-msg"></div>
                 </div>
 
+                <!-- Lobby Screen -->
+                <div id="lobbyScreen" class="screen">
+                    <h2>🎯 Lobby</h2>
+                    <div class="lobby-actions">
+                        <button
+                            class="btn btn-primary"
+                            onclick="showCreateRoom()"
+                        >
+                            Create Room
+                        </button>
+                        <button
+                            class="btn btn-secondary"
+                            onclick="showJoinRoom()"
+                        >
+                            Join Room
+                        </button>
+                    </div>
+
+                    <!-- Join by code -->
+                    <div id="joinForm" class="hidden">
+                        <input
+                            type="text"
+                            id="roomCodeInput"
+                            placeholder="Enter room code (e.g. ABC123)"
+                            maxlength="6"
+                            style="text-transform: uppercase"
+                        />
+                        <button class="btn btn-primary" onclick="joinRoom()">
+                            Join
+                        </button>
+                    </div>
+
+                    <!-- Create room settings -->
+                    <div id="createForm" class="hidden">
+                        <div class="settings-panel">
+                            <h3>Room Settings</h3>
+                            <div class="setting-row">
+                                <label>Max Players</label>
+                                <input
+                                    type="number"
+                                    id="setMaxPlayers"
+                                    value="6"
+                                    min="2"
+                                    max="10"
+                                />
+                            </div>
+                            <div class="setting-row">
+                                <label>Questions</label>
+                                <input
+                                    type="number"
+                                    id="setQuestionCount"
+                                    value="5"
+                                    min="3"
+                                    max="20"
+                                />
+                            </div>
+                            <div class="setting-row">
+                                <label>Source</label>
+                                <select
+                                    id="setQuestionSource"
+                                    onchange="toggleCustomQ()"
+                                >
+                                    <option value="database">Database</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <label>Mode</label>
+                                <select id="setQuestionMode">
+                                    <option value="same_for_all">
+                                        Same for All
+                                    </option>
+                                    <option value="random_per_player">
+                                        Random per Player
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <label>Show Results</label>
+                                <select id="setResultMode">
+                                    <option value="instant">
+                                        After Each Answer
+                                    </option>
+                                    <option value="end">At End</option>
+                                </select>
+                            </div>
+                            <!-- Custom Questions Editor -->
+                            <div id="customQEditor" class="hidden">
+                                <h3 style="margin-top: 15px">
+                                    Custom Questions
+                                </h3>
+                                <div id="customQList"></div>
+                                <button
+                                    class="btn btn-secondary btn-small"
+                                    onclick="addCustomQuestion()"
+                                    style="margin-top: 10px"
+                                >
+                                    + Add Question
+                                </button>
+                            </div>
+                        </div>
+                        <button class="btn btn-success" onclick="createRoom()">
+                            Create Room
+                        </button>
+                    </div>
+
+                    <div id="lobbyError" class="error-msg"></div>
+                </div>
+
+                <!-- Room Screen -->
+                <div id="roomScreen" class="screen">
+                    <h2>🏠 Room</h2>
+                    <div class="room-code" id="roomCodeDisplay">------</div>
+                    <p
+                        style="
+                            text-align: center;
+                            color: #888;
+                            margin-bottom: 10px;
+                        "
+                    >
+                        Share this code with friends to join
+                    </p>
+
+                    <ul class="player-list" id="playerList"></ul>
+
+                    <!-- Room Settings Display -->
+                    <div class="settings-panel" id="roomSettingsDisplay">
+                        <h3>Settings</h3>
+                        <div id="roomSettingsInfo"></div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px">
+                        <button
+                            class="btn btn-primary"
+                            id="readyBtn"
+                            onclick="toggleReady()"
+                        >
+                            Ready
+                        </button>
+                        <button
+                            class="btn btn-success hidden"
+                            id="startBtn"
+                            onclick="startGame()"
+                        >
+                            Start Game
+                        </button>
+                    </div>
+                    <button
+                        class="btn btn-secondary"
+                        onclick="leaveRoom()"
+                        style="margin-top: 5px"
+                    >
+                        Leave Room
+                    </button>
+                    <div id="roomError" class="error-msg"></div>
+                </div>
+
                 <!-- Loading -->
-                <div id="loadingScreen" class="loading" style="display: none">
+                <div id="loadingScreen" class="screen loading">
                     <div class="spinner"></div>
                 </div>
 
                 <!-- Quiz Screen -->
-                <div id="quizScreen" class="quiz-screen">
+                <div id="quizScreen" class="screen">
                     <div class="question-text" id="questionText"></div>
                     <div class="options" id="optionsContainer"></div>
                     <div class="feedback" id="feedback"></div>
+                    <div class="answer-queue" id="answerQueue"></div>
                 </div>
 
-                <!-- Result Screen -->
-                <div
-                    id="resultScreen"
-                    class="result-screen"
-                    style="display: none"
-                >
+                <!-- Summary Screen -->
+                <div id="summaryScreen" class="screen summary-screen">
+                    <h2>📊 Quiz Summary</h2>
+                    <div id="winnerCard"></div>
+                    <table class="ranking-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Player</th>
+                                <th>Score</th>
+                                <th>Accuracy</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rankingBody"></tbody>
+                    </table>
+                    <div id="detailSection"></div>
+                    <button
+                        class="btn btn-primary"
+                        onclick="backToLobby()"
+                        style="margin-top: 15px"
+                    >
+                        Back to Lobby
+                    </button>
+                </div>
+
+                <!-- Solo Result (for single-player mode) -->
+                <div id="resultScreen" class="screen">
                     <h2>🎉 Quiz Complete!</h2>
-                    <div class="final-score" id="finalScore">0</div>
-                    <div class="result-message" id="resultMessage"></div>
-                    <button class="btn btn-success" onclick="startNewQuiz()">
-                        Play Again
+                    <div
+                        style="
+                            font-size: 3em;
+                            text-align: center;
+                            margin: 20px 0;
+                        "
+                        id="finalScore"
+                    >
+                        0
+                    </div>
+                    <div
+                        style="
+                            text-align: center;
+                            color: #666;
+                            margin-bottom: 20px;
+                        "
+                        id="resultMessage"
+                    ></div>
+                    <button class="btn btn-success" onclick="backToLobby()">
+                        Back to Lobby
                     </button>
                 </div>
             </div>
         </div>
 
         <script>
-            const API_BASE = "";
+            // ═══════════════════════════════════════════════════════════
+            //  STATE
+            // ═══════════════════════════════════════════════════════════
+
             let currentUser = null;
+            let authToken = null;
+            let ws = null;
+            let currentRoomCode = null;
             let currentQuestion = null;
-            let questionsAnswered = 0;
-            const TOTAL_QUESTIONS = 5;
+            let questionOrder = 0;
+            let totalQuestions = 5;
+            let resultMode = "instant";
+            let isMaster = false;
 
-            // Show/hide screens
-            function showScreen(screen) {
-                document.getElementById("loginScreen").style.display = "none";
-                document.getElementById("loadingScreen").style.display = "none";
-                document.getElementById("quizScreen").style.display = "none";
-                document.getElementById("resultScreen").style.display = "none";
+            // ═══════════════════════════════════════════════════════════
+            //  SCREEN MANAGEMENT
+            // ═══════════════════════════════════════════════════════════
 
-                if (screen === "login")
-                    document.getElementById("loginScreen").style.display =
-                        "block";
-                if (screen === "loading")
-                    document.getElementById("loadingScreen").style.display =
-                        "flex";
-                if (screen === "quiz")
-                    document.getElementById("quizScreen").style.display =
-                        "block";
-                if (screen === "result")
-                    document.getElementById("resultScreen").style.display =
-                        "block";
+            function showScreen(screenId) {
+                document
+                    .querySelectorAll(".screen")
+                    .forEach((s) => s.classList.remove("active"));
+                document.getElementById(screenId).classList.add("active");
             }
 
-            // Update progress bar
             function updateProgress() {
-                const progress = (questionsAnswered / TOTAL_QUESTIONS) * 100;
-                document.getElementById("progressFill").style.width =
-                    progress + "%";
+                const pct = (questionOrder / totalQuestions) * 100;
+                document.getElementById("progressFill").style.width = pct + "%";
             }
 
-            // Register user
+            function showUserHeader(show) {
+                document.getElementById("logoutBtn").style.display = show
+                    ? "block"
+                    : "none";
+                document.getElementById("userInfo").style.display = show
+                    ? "flex"
+                    : "none";
+            }
+
+            function showScoreBar(show) {
+                document.getElementById("headerScore").style.display = show
+                    ? "block"
+                    : "none";
+                document.getElementById("progressBar").style.display = show
+                    ? "block"
+                    : "none";
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  API HELPERS
+            // ═══════════════════════════════════════════════════════════
+
+            async function api(method, path, body = null) {
+                const opts = {
+                    method,
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...(authToken
+                            ? { Authorization: `Bearer ${authToken}` }
+                            : {}),
+                    },
+                };
+                if (body) opts.body = JSON.stringify(body);
+                const res = await fetch(path, opts);
+                return res.json();
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  AUTH
+            // ═══════════════════════════════════════════════════════════
+
             async function registerUser() {
                 const username = document
                     .getElementById("usernameInput")
                     .value.trim();
-                const errorDiv = document.getElementById("loginError");
+                const errEl = document.getElementById("loginError");
 
                 if (!username || username.length < 2) {
-                    errorDiv.textContent =
+                    errEl.textContent =
                         "Username must be at least 2 characters";
                     return;
                 }
 
-                showScreen("loading");
+                showScreen("loadingScreen");
 
                 try {
-                    const response = await fetch(`${API_BASE}/api/register`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ username }),
+                    const data = await api("POST", "/api/register", {
+                        username,
                     });
-
-                    const data = await response.json();
-
                     if (data.success) {
                         currentUser = data.user;
+                        authToken = data.token;
+                        localStorage.setItem("authToken", authToken);
                         localStorage.setItem("userId", currentUser.id);
                         localStorage.setItem("username", currentUser.username);
-                        startNewQuiz();
+                        enterLobby();
                     } else {
-                        showScreen("login");
-                        errorDiv.textContent =
+                        showScreen("loginScreen");
+                        errEl.textContent =
                             data.message || "Registration failed";
                     }
-                } catch (error) {
-                    showScreen("login");
-                    errorDiv.textContent =
-                        "Connection error. Please try again.";
-                    console.error("Register error:", error);
+                } catch (e) {
+                    showScreen("loginScreen");
+                    errEl.textContent = "Connection error";
                 }
             }
 
-            // Get next question
-            async function getNextQuestion() {
-                showScreen("loading");
+            async function logout() {
+                try {
+                    await api("POST", "/api/logout");
+                } catch (_) {}
+                currentUser = null;
+                authToken = null;
+                currentRoomCode = null;
+                localStorage.removeItem("authToken");
+                localStorage.removeItem("userId");
+                localStorage.removeItem("username");
+                localStorage.removeItem("roomCode");
+                disconnectWS();
+                showUserHeader(false);
+                showScoreBar(false);
+                showScreen("loginScreen");
+            }
+
+            async function validateSession() {
+                const savedToken = localStorage.getItem("authToken");
+                if (!savedToken) return false;
+
+                authToken = savedToken;
+                try {
+                    const data = await api("GET", "/api/auth/validate");
+                    if (data.success) {
+                        currentUser = data.user;
+                        return true;
+                    }
+                } catch (_) {}
+                return false;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  WEBSOCKET
+            // ═══════════════════════════════════════════════════════════
+
+            function connectWS() {
+                const protocol =
+                    location.protocol === "https:" ? "wss:" : "ws:";
+                ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+                ws.onopen = () => {
+                    ws.send(JSON.stringify({ type: "auth", token: authToken }));
+                    // Rejoin room if reconnecting
+                    const savedRoom = localStorage.getItem("roomCode");
+                    if (savedRoom) {
+                        currentRoomCode = savedRoom;
+                        ws.send(
+                            JSON.stringify({
+                                type: "join_room",
+                                roomCode: savedRoom,
+                            }),
+                        );
+                    }
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleWSMessage(data);
+                };
+
+                ws.onclose = () => {
+                    // Auto-reconnect after 3 seconds
+                    if (authToken) {
+                        setTimeout(connectWS, 3000);
+                    }
+                };
+            }
+
+            function disconnectWS() {
+                if (ws) {
+                    ws.close();
+                    ws = null;
+                }
+            }
+
+            function wsSend(data) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify(data));
+                }
+            }
+
+            function handleWSMessage(data) {
+                switch (data.type) {
+                    case "auth_ok":
+                        break;
+                    case "room_joined":
+                        break;
+                    case "player_joined":
+                        addPlayerToList(data.player);
+                        break;
+                    case "player_left":
+                        removePlayerFromList(data.userId);
+                        break;
+                    case "player_kicked":
+                        if (data.userId === currentUser.id) {
+                            alert("You have been kicked from the room.");
+                            currentRoomCode = null;
+                            localStorage.removeItem("roomCode");
+                            enterLobby();
+                        } else {
+                            removePlayerFromList(data.userId);
+                        }
+                        break;
+                    case "player_ready":
+                        updatePlayerReady(data.userId, data.isReady);
+                        break;
+                    case "user_connected":
+                        // Refresh room state
+                        if (currentRoomCode) refreshRoomState();
+                        break;
+                    case "user_disconnected":
+                        break;
+                    case "game_started":
+                        questionOrder = 0;
+                        totalQuestions = data.totalQuestions;
+                        resultMode = data.resultMode;
+                        showScoreBar(true);
+                        handleNextQuestion(data);
+                        break;
+                    case "next_question":
+                        handleNextQuestion(data);
+                        break;
+                    case "answer_result":
+                        handleAnswerResult(data);
+                        break;
+                    case "game_over":
+                        showSummary(data.summary);
+                        break;
+                    case "error":
+                        console.error("WS error:", data.message);
+                        break;
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  LOBBY
+            // ═══════════════════════════════════════════════════════════
+
+            function enterLobby() {
+                document.getElementById("userAvatar").src =
+                    currentUser.avatar ||
+                    `https://api.dicebear.com/7.x/thumbs/svg?seed=${currentUser.username}`;
+                document.getElementById("userName").textContent =
+                    currentUser.username;
+                showUserHeader(true);
+                showScoreBar(false);
+                showScreen("lobbyScreen");
+                connectWS();
+            }
+
+            function showCreateRoom() {
+                document
+                    .getElementById("createForm")
+                    .classList.remove("hidden");
+                document.getElementById("joinForm").classList.add("hidden");
+            }
+
+            function showJoinRoom() {
+                document.getElementById("joinForm").classList.remove("hidden");
+                document.getElementById("createForm").classList.add("hidden");
+            }
+
+            function toggleCustomQ() {
+                const isCustom =
+                    document.getElementById("setQuestionSource").value ===
+                    "custom";
+                document
+                    .getElementById("customQEditor")
+                    .classList.toggle("hidden", !isCustom);
+            }
+
+            let customQuestions = [];
+            function addCustomQuestion() {
+                const idx = customQuestions.length;
+                customQuestions.push({
+                    text: "",
+                    options: ["", "", "", ""],
+                    correct_answer: "",
+                });
+
+                const list = document.getElementById("customQList");
+                const div = document.createElement("div");
+                div.className = "custom-q-form";
+                div.id = `cq_${idx}`;
+                div.innerHTML = `
+                    <strong>Q${idx + 1}</strong>
+                    <input type="text" placeholder="Question text" onchange="customQuestions[${idx}].text=this.value" />
+                    <input type="text" placeholder="Option A" onchange="customQuestions[${idx}].options[0]=this.value" />
+                    <input type="text" placeholder="Option B" onchange="customQuestions[${idx}].options[1]=this.value" />
+                    <input type="text" placeholder="Option C" onchange="customQuestions[${idx}].options[2]=this.value" />
+                    <input type="text" placeholder="Option D" onchange="customQuestions[${idx}].options[3]=this.value" />
+                    <input type="text" placeholder="Correct Answer" onchange="customQuestions[${idx}].correct_answer=this.value" />
+                `;
+                list.appendChild(div);
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  ROOM MANAGEMENT
+            // ═══════════════════════════════════════════════════════════
+
+            async function createRoom() {
+                const errEl = document.getElementById("lobbyError");
+                const settings = {
+                    maxPlayers:
+                        parseInt(
+                            document.getElementById("setMaxPlayers").value,
+                        ) || 6,
+                    questionCount:
+                        parseInt(
+                            document.getElementById("setQuestionCount").value,
+                        ) || 5,
+                    questionSource:
+                        document.getElementById("setQuestionSource").value,
+                    questionMode:
+                        document.getElementById("setQuestionMode").value,
+                    resultMode: document.getElementById("setResultMode").value,
+                    customQuestions:
+                        document.getElementById("setQuestionSource").value ===
+                        "custom"
+                            ? customQuestions
+                            : [],
+                };
 
                 try {
-                    const response = await fetch(
-                        `${API_BASE}/api/questions/next`,
-                        {
-                            headers: { "X-User-Id": currentUser.id },
-                        },
-                    );
-
-                    const data = await response.json();
-
+                    const data = await api("POST", "/api/rooms", settings);
                     if (data.success) {
-                        currentQuestion = data.question;
-                        document.getElementById("headerScore").textContent =
-                            `Score: ${data.currentScore}`;
-                        displayQuestion();
-                        showScreen("quiz");
+                        currentRoomCode = data.room.code;
+                        localStorage.setItem("roomCode", currentRoomCode);
+                        isMaster = true;
+                        wsSend({
+                            type: "join_room",
+                            roomCode: currentRoomCode,
+                        });
+                        showRoomScreen(data.room);
                     } else {
-                        showScreen("login");
-                        document.getElementById("loginError").textContent =
-                            data.message;
+                        errEl.textContent = data.message;
                     }
-                } catch (error) {
-                    console.error("Get question error:", error);
-                    showScreen("login");
-                    document.getElementById("loginError").textContent =
-                        "Connection error";
+                } catch (e) {
+                    errEl.textContent = "Failed to create room";
                 }
             }
 
-            // Display question
+            async function joinRoom() {
+                const code = document
+                    .getElementById("roomCodeInput")
+                    .value.trim()
+                    .toUpperCase();
+                const errEl = document.getElementById("lobbyError");
+
+                if (!code || code.length < 4) {
+                    errEl.textContent = "Enter a valid room code";
+                    return;
+                }
+
+                try {
+                    const data = await api("POST", `/api/rooms/${code}/join`);
+                    if (data.success) {
+                        currentRoomCode = code;
+                        localStorage.setItem("roomCode", code);
+                        isMaster = data.room.masterId === currentUser.id;
+                        wsSend({ type: "join_room", roomCode: code });
+                        showRoomScreen(data.room);
+                    } else {
+                        errEl.textContent = data.message;
+                    }
+                } catch (e) {
+                    errEl.textContent = "Failed to join room";
+                }
+            }
+
+            async function leaveRoom() {
+                if (currentRoomCode) {
+                    try {
+                        await api(
+                            "POST",
+                            `/api/rooms/${currentRoomCode}/leave`,
+                        );
+                    } catch (_) {}
+                    wsSend({ type: "leave_room" });
+                    currentRoomCode = null;
+                    localStorage.removeItem("roomCode");
+                    enterLobby();
+                }
+            }
+
+            async function toggleReady() {
+                if (!currentRoomCode) return;
+                const data = await api(
+                    "POST",
+                    `/api/rooms/${currentRoomCode}/ready`,
+                );
+                if (data.success) {
+                    const btn = document.getElementById("readyBtn");
+                    btn.textContent = data.isReady ? "Not Ready" : "Ready";
+                    btn.className = data.isReady
+                        ? "btn btn-danger"
+                        : "btn btn-primary";
+                }
+            }
+
+            async function kickPlayer(userId) {
+                if (!currentRoomCode) return;
+                await api("POST", `/api/rooms/${currentRoomCode}/kick`, {
+                    targetUserId: userId,
+                    code: currentRoomCode,
+                });
+            }
+
+            async function startGame() {
+                if (!currentRoomCode) return;
+                const errEl = document.getElementById("roomError");
+                try {
+                    const data = await api(
+                        "POST",
+                        `/api/rooms/${currentRoomCode}/start`,
+                    );
+                    if (!data.success) {
+                        errEl.textContent = data.message;
+                    }
+                } catch (e) {
+                    errEl.textContent = "Failed to start game";
+                }
+            }
+
+            async function refreshRoomState() {
+                if (!currentRoomCode) return;
+                try {
+                    const data = await api(
+                        "GET",
+                        `/api/rooms/${currentRoomCode}`,
+                    );
+                    if (data.success) {
+                        showRoomScreen(data.room);
+                    }
+                } catch (_) {}
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  ROOM UI
+            // ═══════════════════════════════════════════════════════════
+
+            function showRoomScreen(room) {
+                showScreen("roomScreen");
+                showScoreBar(false);
+
+                document.getElementById("roomCodeDisplay").textContent =
+                    room.code;
+
+                // Settings
+                const s = room.settings;
+                document.getElementById("roomSettingsInfo").innerHTML = `
+                    <div style="font-size:14px;color:#666">
+                        Max Players: ${s.max_players} · Questions: ${s.question_count}<br>
+                        Source: ${s.question_source} · Mode: ${s.question_mode === "same_for_all" ? "Same for All" : "Random per Player"}<br>
+                        Results: ${s.result_mode === "instant" ? "Instant" : "At End"}
+                    </div>
+                `;
+
+                // Master controls
+                isMaster = room.masterId === currentUser.id;
+                document
+                    .getElementById("startBtn")
+                    .classList.toggle("hidden", !isMaster);
+
+                // Player list
+                renderPlayerList(room.players);
+            }
+
+            function renderPlayerList(players) {
+                const list = document.getElementById("playerList");
+                list.innerHTML = "";
+                players.forEach((p) => {
+                    const li = document.createElement("li");
+                    li.className = "player-item";
+                    li.id = `player_${p.userId}`;
+                    const masterBadge =
+                        p.userId ===
+                        document.getElementById("roomCodeDisplay").textContent
+                            ? ""
+                            : "";
+
+                    li.innerHTML = `
+                        <img src="${p.avatar}" alt="${p.username}" />
+                        <span class="player-name">
+                            ${p.username}
+                            ${p.userId === currentUser.id ? " (You)" : ""}
+                        </span>
+                        <span class="player-badge ${p.isReady ? "badge-ready" : "badge-not-ready"}">
+                            ${p.isReady ? "✓ Ready" : "✗ Not Ready"}
+                        </span>
+                        ${
+                            isMaster && p.userId !== currentUser.id
+                                ? `<button class="kick-btn" onclick="kickPlayer('${p.userId}')">Kick</button>`
+                                : ""
+                        }
+                    `;
+                    list.appendChild(li);
+                });
+            }
+
+            function addPlayerToList(player) {
+                const list = document.getElementById("playerList");
+                if (document.getElementById(`player_${player.userId}`)) return;
+                const li = document.createElement("li");
+                li.className = "player-item";
+                li.id = `player_${player.userId}`;
+                li.innerHTML = `
+                    <img src="${player.avatar}" alt="${player.username}" />
+                    <span class="player-name">${player.username}</span>
+                    <span class="player-badge badge-not-ready">✗ Not Ready</span>
+                    ${
+                        isMaster
+                            ? `<button class="kick-btn" onclick="kickPlayer('${player.userId}')">Kick</button>`
+                            : ""
+                    }
+                `;
+                list.appendChild(li);
+            }
+
+            function removePlayerFromList(userId) {
+                const el = document.getElementById(`player_${userId}`);
+                if (el) el.remove();
+            }
+
+            function updatePlayerReady(userId, isReady) {
+                const el = document.getElementById(`player_${userId}`);
+                if (!el) return;
+                const badge = el.querySelector(".player-badge");
+                if (badge) {
+                    badge.className = `player-badge ${isReady ? "badge-ready" : "badge-not-ready"}`;
+                    badge.textContent = isReady ? "✓ Ready" : "✗ Not Ready";
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  QUIZ GAME
+            // ═══════════════════════════════════════════════════════════
+
+            function handleNextQuestion(data) {
+                questionOrder = data.questionNumber;
+                totalQuestions = data.totalQuestions;
+                resultMode = data.resultMode;
+                updateProgress();
+
+                // Get question — could be same for all or per-player
+                let question;
+                if (data.questions?.all) {
+                    question = data.questions.all;
+                } else if (data.questions?.[currentUser.id]) {
+                    question = data.questions[currentUser.id];
+                } else {
+                    question = data.questions;
+                }
+
+                currentQuestion = question;
+                document.getElementById("headerScore").textContent =
+                    `Question ${questionOrder}/${totalQuestions}`;
+                showScreen("quizScreen");
+                displayQuestion();
+            }
+
             function displayQuestion() {
+                if (!currentQuestion) return;
                 document.getElementById("questionText").textContent =
                     currentQuestion.text;
                 const container = document.getElementById("optionsContainer");
                 container.innerHTML = "";
                 document.getElementById("feedback").className = "feedback";
                 document.getElementById("feedback").textContent = "";
+                document.getElementById("answerQueue").textContent = "";
 
-                currentQuestion.options.forEach((option, index) => {
+                currentQuestion.options.forEach((option) => {
                     const btn = document.createElement("button");
                     btn.className = "option-btn";
                     btn.textContent = option;
@@ -447,108 +1293,281 @@
                 });
             }
 
-            // Select answer
             async function selectAnswer(answer, btn) {
-                // Disable all buttons
                 const buttons = document.querySelectorAll(".option-btn");
                 buttons.forEach((b) => b.classList.add("disabled"));
 
                 try {
-                    const response = await fetch(`${API_BASE}/api/answer`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            questionId: currentQuestion.id,
-                            userAnswer: answer,
-                            userId: currentUser.id,
-                        }),
+                    await api("POST", `/api/rooms/${currentRoomCode}/answer`, {
+                        questionId: currentQuestion.id,
+                        answer,
+                        questionOrder,
                     });
 
-                    const data = await response.json();
+                    if (resultMode === "instant") {
+                        document.getElementById("answerQueue").textContent =
+                            "Waiting for other players...";
+                    } else {
+                        // End mode — no feedback, just wait
+                        document.getElementById("answerQueue").textContent =
+                            "Answer submitted. Waiting...";
+                    }
+                } catch (e) {
+                    console.error("Answer error:", e);
+                }
+            }
+
+            function handleAnswerResult(data) {
+                if (resultMode !== "instant") return;
+
+                // Highlight correct/wrong
+                const buttons = document.querySelectorAll(".option-btn");
+                buttons.forEach((b) => {
+                    if (b.textContent === data.correctAnswer) {
+                        b.classList.add("correct");
+                    }
+                });
+
+                // Show feedback for current user
+                if (data.userId === currentUser.id) {
+                    const feedback = document.getElementById("feedback");
+                    if (data.isCorrect) {
+                        feedback.className = "feedback correct";
+                        feedback.textContent = "✅ Correct! +10 points";
+                    } else {
+                        feedback.className = "feedback wrong";
+                        feedback.textContent = `❌ Wrong! Answer: ${data.correctAnswer}`;
+                    }
+                    document.getElementById("headerScore").textContent =
+                        `Score: ${data.score}`;
+                }
+
+                document.getElementById("answerQueue").textContent =
+                    "Waiting for other players...";
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  SUMMARY
+            // ═══════════════════════════════════════════════════════════
+
+            function showSummary(summary) {
+                showScreen("summaryScreen");
+                showScoreBar(false);
+
+                // Winner card
+                const winner = summary[0];
+                const winnerHtml = winner
+                    ? `
+                    <div class="winner-card">
+                        <div class="trophy">🏆</div>
+                        <div class="winner-name">${winner.username}</div>
+                        <div>${winner.score} points · ${winner.accuracy}% accuracy</div>
+                    </div>
+                `
+                    : "";
+                document.getElementById("winnerCard").innerHTML = winnerHtml;
+
+                // Ranking table
+                const tbody = document.getElementById("rankingBody");
+                tbody.innerHTML = "";
+                summary.forEach((p) => {
+                    const tr = document.createElement("tr");
+                    const medal =
+                        p.rank === 1
+                            ? "🥇"
+                            : p.rank === 2
+                              ? "🥈"
+                              : p.rank === 3
+                                ? "🥉"
+                                : p.rank;
+                    tr.innerHTML = `
+                        <td class="rank-number">${medal}</td>
+                        <td>
+                            <img src="${p.avatar}" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:6px" />
+                            ${p.username}
+                        </td>
+                        <td>${p.score}</td>
+                        <td>
+                            ${p.accuracy}%
+                            <span class="accuracy-bar" style="width:${p.accuracy * 0.8}px"></span>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                // Detail breakdown
+                const detailSection = document.getElementById("detailSection");
+                detailSection.innerHTML = "";
+                summary.forEach((p) => {
+                    if (p.answers.length === 0) return;
+                    const div = document.createElement("div");
+                    div.innerHTML = `
+                        <button class="detail-toggle" onclick="this.nextElementSibling.classList.toggle('show')">
+                            ▶ ${p.username}'s answers
+                        </button>
+                        <div class="detail-list">
+                            ${p.answers
+                                .map(
+                                    (a, i) => `
+                                <div class="detail-item ${a.isCorrect ? "correct" : "wrong"}">
+                                    ${i + 1}. ${a.questionText}<br>
+                                    &nbsp;&nbsp;&nbsp;Your: ${a.userAnswer} ${a.isCorrect ? "✓" : `✗ (Correct: ${a.correctAnswer})`}
+                                </div>
+                            `,
+                                )
+                                .join("")}
+                        </div>
+                    `;
+                    detailSection.appendChild(div);
+                });
+
+                // Cleanup room state
+                currentRoomCode = null;
+                localStorage.removeItem("roomCode");
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            //  SOLO MODE (Legacy)
+            // ═══════════════════════════════════════════════════════════
+
+            async function startSoloQuiz() {
+                questionOrder = 0;
+                totalQuestions = 5;
+                showScoreBar(true);
+                await getNextSoloQuestion();
+            }
+
+            async function getNextSoloQuestion() {
+                showScreen("loadingScreen");
+                try {
+                    const data = await api("GET", "/api/questions/next");
+                    if (data.success) {
+                        currentQuestion = data.question;
+                        document.getElementById("headerScore").textContent =
+                            `Score: ${data.currentScore}`;
+                        questionOrder++;
+                        updateProgress();
+                        showScreen("quizScreen");
+                        displaySoloQuestion();
+                    } else {
+                        showScreen("lobbyScreen");
+                    }
+                } catch (e) {
+                    showScreen("lobbyScreen");
+                }
+            }
+
+            function displaySoloQuestion() {
+                if (!currentQuestion) return;
+                document.getElementById("questionText").textContent =
+                    currentQuestion.text;
+                const container = document.getElementById("optionsContainer");
+                container.innerHTML = "";
+                document.getElementById("feedback").className = "feedback";
+                document.getElementById("feedback").textContent = "";
+
+                currentQuestion.options.forEach((option) => {
+                    const btn = document.createElement("button");
+                    btn.className = "option-btn";
+                    btn.textContent = option;
+                    btn.onclick = () => selectSoloAnswer(option, btn);
+                    container.appendChild(btn);
+                });
+            }
+
+            async function selectSoloAnswer(answer, btn) {
+                const buttons = document.querySelectorAll(".option-btn");
+                buttons.forEach((b) => b.classList.add("disabled"));
+
+                try {
+                    const data = await api("POST", "/api/answer", {
+                        questionId: currentQuestion.id,
+                        userAnswer: answer,
+                    });
 
                     if (data.success) {
-                        // Highlight correct/wrong
                         buttons.forEach((b) => {
-                            if (b.textContent === data.correctAnswer) {
+                            if (b.textContent === data.correctAnswer)
                                 b.classList.add("correct");
-                            } else if (b === btn && !data.isCorrect) {
+                            else if (b === btn && !data.isCorrect)
                                 b.classList.add("wrong");
-                            }
                         });
 
-                        // Show feedback
                         const feedback = document.getElementById("feedback");
                         if (data.isCorrect) {
                             feedback.className = "feedback correct";
                             feedback.textContent = "✅ Correct! +10 points";
                         } else {
                             feedback.className = "feedback wrong";
-                            feedback.textContent = `❌ Wrong! The answer was: ${data.correctAnswer}`;
+                            feedback.textContent = `❌ Wrong! Answer: ${data.correctAnswer}`;
                         }
 
-                        // Update score
                         document.getElementById("headerScore").textContent =
                             `Score: ${data.score}`;
-                        questionsAnswered++;
+                        questionOrder++;
                         updateProgress();
 
-                        // Wait, then show next question or results
                         setTimeout(() => {
-                            if (questionsAnswered >= TOTAL_QUESTIONS) {
-                                showResults(data.score);
+                            if (questionOrder >= totalQuestions) {
+                                showSoloResults(data.score);
                             } else {
-                                getNextQuestion();
+                                getNextSoloQuestion();
                             }
                         }, 1500);
                     }
-                } catch (error) {
-                    console.error("Submit answer error:", error);
+                } catch (e) {
+                    console.error("Answer error:", e);
                 }
             }
 
-            // Show results
-            function showResults(finalScore) {
-                document.getElementById("finalScore").textContent = finalScore;
-
-                let message = "";
-                if (finalScore >= 40)
-                    message = "🏆 Amazing! You're a trivia master!";
-                else if (finalScore >= 30)
-                    message = "🌟 Great job! You know your stuff!";
-                else if (finalScore >= 20)
-                    message = "👍 Good effort! Keep practicing!";
-                else message = "💪 Keep trying! You'll get better!";
-
-                document.getElementById("resultMessage").textContent = message;
-                showScreen("result");
+            function showSoloResults(score) {
+                document.getElementById("finalScore").textContent = score;
+                let msg = "";
+                if (score >= 40) msg = "🏆 Amazing! You're a trivia master!";
+                else if (score >= 30) msg = "🌟 Great job!";
+                else if (score >= 20) msg = "👍 Good effort!";
+                else msg = "💪 Keep trying!";
+                document.getElementById("resultMessage").textContent = msg;
+                showScreen("resultScreen");
             }
 
-            // Start new quiz
-            function startNewQuiz() {
-                questionsAnswered = 0;
-                updateProgress();
-                getNextQuestion();
+            // ═══════════════════════════════════════════════════════════
+            //  NAVIGATION HELPERS
+            // ═══════════════════════════════════════════════════════════
+
+            function backToLobby() {
+                currentRoomCode = null;
+                localStorage.removeItem("roomCode");
+                questionOrder = 0;
+                enterLobby();
             }
 
-            // Check if user is already logged in
-            window.onload = function () {
-                const savedUserId = localStorage.getItem("userId");
-                const savedUsername = localStorage.getItem("username");
-
-                if (savedUserId && savedUsername) {
-                    currentUser = { id: savedUserId, username: savedUsername };
-                    startNewQuiz();
-                } else {
-                    showScreen("login");
-                }
-            };
-
-            // Allow Enter key to submit
+            // Enter key for login
             document
                 .getElementById("usernameInput")
                 .addEventListener("keypress", (e) => {
                     if (e.key === "Enter") registerUser();
                 });
+
+            // Enter key for join room
+            document
+                .getElementById("roomCodeInput")
+                .addEventListener("keypress", (e) => {
+                    if (e.key === "Enter") joinRoom();
+                });
+
+            // ═══════════════════════════════════════════════════════════
+            //  INIT — Check session on load (reconnection)
+            // ═══════════════════════════════════════════════════════════
+
+            window.onload = async () => {
+                const valid = await validateSession();
+                if (valid) {
+                    enterLobby();
+                } else {
+                    showScreen("loginScreen");
+                }
+            };
         </script>
     </body>
 </html>
