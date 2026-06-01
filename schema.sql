@@ -14,6 +14,63 @@ CREATE TABLE IF NOT EXISTS questions (
     options JSONB NOT NULL -- Array jawaban pilihan
 );
 
+-- Tabel Sessions (Token-based auth)
+CREATE TABLE IF NOT EXISTS sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(64) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL
+);
+
+-- Tabel Rooms (Multiplayer rooms)
+CREATE TABLE IF NOT EXISTS rooms (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(6) NOT NULL UNIQUE,
+    master_id UUID REFERENCES users(id),
+    settings JSONB NOT NULL DEFAULT '{
+        "max_players": 6,
+        "question_count": 5,
+        "question_source": "database",
+        "question_mode": "same_for_all",
+        "result_mode": "instant",
+        "custom_questions": []
+    }',
+    status VARCHAR(20) DEFAULT 'waiting',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabel Room Players
+CREATE TABLE IF NOT EXISTS room_players (
+    id SERIAL PRIMARY KEY,
+    room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id),
+    is_ready BOOLEAN DEFAULT FALSE,
+    score INTEGER DEFAULT 0,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(room_id, user_id)
+);
+
+-- Tabel Room Questions (assigned per room)
+CREATE TABLE IF NOT EXISTS room_questions (
+    id SERIAL PRIMARY KEY,
+    room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
+    question_id INTEGER REFERENCES questions(id),
+    custom_question JSONB,
+    question_order INTEGER NOT NULL
+);
+
+-- Tabel Room Answers (per-player per-question)
+CREATE TABLE IF NOT EXISTS room_answers (
+    id SERIAL PRIMARY KEY,
+    room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id),
+    question_id INTEGER,
+    answer TEXT,
+    is_correct BOOLEAN,
+    answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Tabel History (Opsional, untuk log permainan)
 CREATE TABLE IF NOT EXISTS game_history (
     id SERIAL PRIMARY KEY,
