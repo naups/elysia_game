@@ -721,6 +721,7 @@
             let roomMasterId = null;
             let wsAuthenticated = false;
             let wsQueue = [];
+            let roomPollingInterval = null;
 
             // ═══════════════════════════════════════════════════════════
             //  SCREEN MANAGEMENT
@@ -763,6 +764,33 @@
                 document.getElementById("progressBar").style.display = show
                     ? "block"
                     : "none";
+            }
+
+            // Polling for room state updates
+            function startRoomPolling() {
+                stopRoomPolling();
+                roomPollingInterval = setInterval(async () => {
+                    if (!currentRoomCode) return;
+                    try {
+                        const data = await api(
+                            "GET",
+                            `/api/rooms/${currentRoomCode}`,
+                        );
+                        if (data.success) {
+                            renderPlayerList(
+                                data.room.players,
+                                data.room.masterId,
+                            );
+                        }
+                    } catch (_) {}
+                }, 3000);
+            }
+
+            function stopRoomPolling() {
+                if (roomPollingInterval) {
+                    clearInterval(roomPollingInterval);
+                    roomPollingInterval = null;
+                }
             }
 
             // ═══════════════════════════════════════════════════════════
@@ -964,6 +992,7 @@
                         questionOrder = 0;
                         totalQuestions = data.totalQuestions;
                         resultMode = data.resultMode;
+                        stopRoomPolling();
                         showScoreBar(true);
                         handleNextQuestion(data);
                         break;
@@ -1134,6 +1163,7 @@
 
             async function leaveRoom() {
                 if (currentRoomCode) {
+                    stopRoomPolling();
                     try {
                         await api(
                             "POST",
@@ -1149,7 +1179,7 @@
             }
 
             async function toggleReady() {
-                if (!currentRoomCode) return;
+                if (!currentRoomCode || isMaster) return;
                 const data = await api(
                     "POST",
                     `/api/rooms/${currentRoomCode}/ready`,
@@ -1174,13 +1204,16 @@
             async function startGame() {
                 if (!currentRoomCode) return;
                 const errEl = document.getElementById("roomError");
+                errEl.textContent = ""; // Clear previous errors
                 try {
                     const data = await api(
                         "POST",
                         `/api/rooms/${currentRoomCode}/start`,
                     );
                     if (!data.success) {
-                        errEl.textContent = data.message;
+                        errEl.textContent = "⚠ " + data.message;
+                    } else {
+                        stopRoomPolling();
                     }
                 } catch (e) {
                     errEl.textContent = "Failed to start game";
@@ -1228,18 +1261,25 @@
                     .getElementById("startBtn")
                     .classList.toggle("hidden", !isMaster);
 
-                // Update ready button for master (always ready)
+                // Update ready button for master (always ready, disabled)
                 const readyBtn = document.getElementById("readyBtn");
                 if (isMaster) {
-                    readyBtn.textContent = "Not Ready";
-                    readyBtn.className = "btn btn-danger";
+                    readyBtn.textContent = "✓ Always Ready";
+                    readyBtn.className = "btn btn-secondary";
+                    readyBtn.disabled = true;
+                    readyBtn.style.cursor = "not-allowed";
                 } else {
                     readyBtn.textContent = "Ready";
                     readyBtn.className = "btn btn-primary";
+                    readyBtn.disabled = false;
+                    readyBtn.style.cursor = "pointer";
                 }
 
                 // Player list
                 renderPlayerList(room.players, room.masterId);
+
+                // Start polling for live updates
+                startRoomPolling();
             }
 
             function renderPlayerList(players, masterId) {
@@ -1598,6 +1638,7 @@
             // ═══════════════════════════════════════════════════════════
 
             function backToLobby() {
+                stopRoomPolling();
                 currentRoomCode = null;
                 roomMasterId = null;
                 localStorage.removeItem("roomCode");
@@ -1642,30 +1683,67 @@
                         currentRoomCode = savedRoom;
                         showScreen("loadingScreen");
                         connectWS();
-                        // Fetch room state after WS connects
+                        // Fetch game state after WS connects
                         setTimeout(async () => {
                             try {
                                 const data = await api(
                                     "GET",
-                                    `/api/rooms/${savedRoom}`,
+                                    `/api/rooms/${savedRoom}/state`,
                                 );
-                                if (
-                                    data.success &&
-                                    data.room.status === "waiting"
-                                ) {
-                                    isMaster =
-                                        data.room.masterId === currentUser.id;
-                                    showRoomScreen(data.room);
-                                    wsSend({
-                                        type: "join_room",
-                                        roomCode: savedRoom,
+                                if (!data.success || !data.room) {
+                                    localStorage.removeItem("roomCode");
+                                    enterLobby();
+                                    return;
+                                }
+
+                                roomMasterId = data.room.masterId;
+                                isMaster =
+                                    data.room.masterId === currentUser.id;
+                                wsSend({
+                                    type: "join_room",
+                                    roomCode: savedRoom,
+                                });
+
+                                if (data.inGame && data.gameState) {
+                                    // Restore quiz state
+                                    questionOrder =
+                                        data.gameState.questionNumber;
+                                    totalQuestions =
+                                        data.gameState.totalQuestions;
+                                    resultMode = data.gameState.resultMode;
+                                    showScoreBar(true);
+                                    handleNextQuestion({
+                                        questions: data.gameState.questions,
+                                        questionNumber:
+                                            data.gameState.questionNumber,
+                                        totalQuestions:
+                                            data.gameState.totalQuestions,
+                                        resultMode: data.gameState.resultMode,
                                     });
+                                    if (data.gameState.alreadyAnswered) {
+                                        // Disable buttons since already answered
+                                        setTimeout(() => {
+                                            document
+                                                .querySelectorAll(".option-btn")
+                                                .forEach((b) =>
+                                                    b.classList.add("disabled"),
+                                                );
+                                            document.getElementById(
+                                                "answerQueue",
+                                            ).textContent =
+                                                "Waiting for other players...";
+                                        }, 100);
+                                    }
+                                } else if (data.room.status === "waiting") {
+                                    // Restore room screen
+                                    showRoomScreen(data.room);
                                 } else {
-                                    // Room ended or not found
+                                    // Room finished or unknown state
                                     localStorage.removeItem("roomCode");
                                     enterLobby();
                                 }
                             } catch (_) {
+                                localStorage.removeItem("roomCode");
                                 enterLobby();
                             }
                         }, 500);

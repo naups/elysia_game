@@ -91,6 +91,7 @@ async function getRoomState(roomCode) {
     masterId: room.master_id,
     settings: room.settings,
     status: room.status,
+    currentQuestionOrder: room.current_question_order || 0,
     players: playersResult.rows.map((p) => ({
       userId: p.user_id,
       username: p.username,
@@ -522,7 +523,7 @@ app.post("/api/rooms/:code/leave", async ({ headers, params }) => {
 });
 
 // Kick player (master only)
-app.post("/api/rooms/:code/kick", async ({ headers, body }) => {
+app.post("/api/rooms/:code/kick", async ({ headers, body, params }) => {
   const token = headers["authorization"]?.replace("Bearer ", "");
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
@@ -532,7 +533,7 @@ app.post("/api/rooms/:code/kick", async ({ headers, body }) => {
 
   try {
     const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      body.code?.toUpperCase() || params?.code?.toUpperCase(),
+      params.code.toUpperCase(),
     ]);
     if (roomResult.rows.length === 0)
       return { success: false, message: "Room not found" };
@@ -669,10 +670,11 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
       );
     }
 
-    // Update room status
-    await pool.query("UPDATE rooms SET status = 'playing' WHERE id = $1", [
-      room.id,
-    ]);
+    // Update room status and set current question
+    await pool.query(
+      "UPDATE rooms SET status = 'playing', current_question_order = 1 WHERE id = $1",
+      [room.id],
+    );
 
     // Reset player scores
     await pool.query("UPDATE room_players SET score = 0 WHERE room_id = $1", [
@@ -759,6 +761,64 @@ app.get("/api/rooms/:code", async ({ headers, params }) => {
   const state = await getRoomState(params.code.toUpperCase());
   if (!state) return { success: false, message: "Room not found" };
   return { success: true, room: state };
+});
+
+// Get game state for reconnection
+app.get("/api/rooms/:code/state", async ({ headers, params }) => {
+  const token = headers["authorization"]?.replace("Bearer ", "");
+  const userId = await validateSession(token);
+  if (!userId) return { success: false, message: "Unauthorized" };
+
+  try {
+    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
+      params.code.toUpperCase(),
+    ]);
+    if (roomResult.rows.length === 0)
+      return { success: false, message: "Room not found" };
+
+    const room = roomResult.rows[0];
+    const state = await getRoomState(params.code.toUpperCase());
+
+    if (room.status !== "playing") {
+      return { success: true, room: state, inGame: false };
+    }
+
+    // Get current question for this room
+    const currentOrder = room.current_question_order || 1;
+    const questions = await getQuestionsForRoom(room, currentOrder);
+
+    // Check if this player already answered the current question
+    let alreadyAnswered = false;
+    if (room.settings.question_mode === "same_for_all") {
+      const qId = await pool.query(
+        "SELECT question_id FROM room_questions WHERE room_id = $1 AND question_order = $2",
+        [room.id, currentOrder],
+      );
+      if (qId.rows.length > 0) {
+        const ansCheck = await pool.query(
+          "SELECT id FROM room_answers WHERE room_id = $1 AND user_id = $2 AND question_id = $3",
+          [room.id, userId, qId.rows[0].question_id],
+        );
+        alreadyAnswered = ansCheck.rows.length > 0;
+      }
+    }
+
+    return {
+      success: true,
+      room: state,
+      inGame: true,
+      gameState: {
+        questions,
+        questionNumber: currentOrder,
+        totalQuestions: room.settings.question_count,
+        resultMode: room.settings.result_mode,
+        alreadyAnswered,
+      },
+    };
+  } catch (error) {
+    console.error("Get game state error:", error.message);
+    return { success: false, message: "Failed to get game state" };
+  }
 });
 
 // Submit answer in multiplayer
@@ -873,6 +933,11 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       } else {
         // Send next question
         const nextOrder = questionOrder + 1;
+        // Update current question order in DB
+        await pool.query(
+          "UPDATE rooms SET current_question_order = $1 WHERE id = $2",
+          [nextOrder, room.id],
+        );
         const nextQuestions = await getQuestionsForRoom(room, nextOrder);
         broadcastToRoom(room.code, {
           type: "next_question",
