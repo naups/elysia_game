@@ -997,7 +997,18 @@
                         handleNextQuestion(data);
                         break;
                     case "next_question":
-                        handleNextQuestion(data);
+                        // Skip if REST response already handled transition
+                        if (
+                            document.getElementById("quizScreen").style
+                                .display !== "none"
+                        ) {
+                            // Already on quiz screen — check if this is a new question
+                            if (data.questionNumber !== questionOrder) {
+                                handleNextQuestion(data);
+                            }
+                        } else {
+                            handleNextQuestion(data);
+                        }
                         break;
                     case "answer_result":
                         handleAnswerResult(data);
@@ -1214,6 +1225,15 @@
                         errEl.textContent = "⚠ " + data.message;
                     } else {
                         stopRoomPolling();
+                        // Transition to quiz from REST response (fallback)
+                        if (data.gameStarted && data.questions) {
+                            handleNextQuestion({
+                                questions: data.questions,
+                                questionNumber: data.questionNumber,
+                                totalQuestions: data.totalQuestions,
+                                resultMode: data.resultMode,
+                            });
+                        }
                     }
                 } catch (e) {
                     errEl.textContent = "Failed to start game";
@@ -1400,19 +1420,59 @@
                 buttons.forEach((b) => b.classList.add("disabled"));
 
                 try {
-                    await api("POST", `/api/rooms/${currentRoomCode}/answer`, {
-                        questionId: currentQuestion.id,
-                        answer,
-                        questionOrder,
-                    });
+                    const data = await api(
+                        "POST",
+                        `/api/rooms/${currentRoomCode}/answer`,
+                        {
+                            questionId: currentQuestion.id,
+                            answer,
+                            questionOrder,
+                        },
+                    );
 
-                    if (resultMode === "instant") {
+                    if (!data.success) {
+                        document.getElementById("answerQueue").textContent =
+                            "Error submitting answer";
+                        return;
+                    }
+
+                    // Show instant feedback if mode is instant
+                    if (
+                        resultMode === "instant" &&
+                        data.isCorrect !== undefined
+                    ) {
+                        const feedback = document.getElementById("feedback");
+                        buttons.forEach((b) => {
+                            if (b.textContent === data.correctAnswer) {
+                                b.classList.add("correct");
+                            } else if (b === btn && !data.isCorrect) {
+                                b.classList.add("wrong");
+                            }
+                        });
+                        if (data.isCorrect) {
+                            feedback.className = "feedback correct";
+                            feedback.textContent = "✅ Correct! +10 points";
+                        } else {
+                            feedback.className = "feedback wrong";
+                            feedback.textContent = `❌ Wrong! Answer: ${data.correctAnswer}`;
+                        }
+                        document.getElementById("headerScore").textContent =
+                            `Score: ${data.score}`;
+                    }
+
+                    // Handle next question from REST response (fallback)
+                    if (data.nextQuestion) {
+                        setTimeout(() => {
+                            handleNextQuestion(data.nextQuestion);
+                        }, 1500);
+                    } else if (data.gameOver) {
+                        // Game over — wait for WS summary
+                        document.getElementById("answerQueue").textContent =
+                            "Game over! Loading results...";
+                    } else {
+                        // Waiting for other players
                         document.getElementById("answerQueue").textContent =
                             "Waiting for other players...";
-                    } else {
-                        // End mode — no feedback, just wait
-                        document.getElementById("answerQueue").textContent =
-                            "Answer submitted. Waiting...";
                     }
                 } catch (e) {
                     console.error("Answer error:", e);
@@ -1422,30 +1482,38 @@
             function handleAnswerResult(data) {
                 if (resultMode !== "instant") return;
 
-                // Highlight correct/wrong
-                const buttons = document.querySelectorAll(".option-btn");
-                buttons.forEach((b) => {
+                // For other players' results, highlight their correct answer
+                if (data.userId !== currentUser.id) {
+                    // Just show that another player answered
+                    return;
+                }
+
+                // Skip if REST response already showed feedback
+                // (buttons already disabled means we already answered)
+                const buttons = document.querySelectorAll(
+                    ".option-btn.disabled",
+                );
+                if (buttons.length > 0) return;
+
+                // Fallback: show feedback from WS if REST didn't provide it
+                const allButtons = document.querySelectorAll(".option-btn");
+                allButtons.forEach((b) => {
                     if (b.textContent === data.correctAnswer) {
                         b.classList.add("correct");
                     }
+                    b.classList.add("disabled");
                 });
 
-                // Show feedback for current user
-                if (data.userId === currentUser.id) {
-                    const feedback = document.getElementById("feedback");
-                    if (data.isCorrect) {
-                        feedback.className = "feedback correct";
-                        feedback.textContent = "✅ Correct! +10 points";
-                    } else {
-                        feedback.className = "feedback wrong";
-                        feedback.textContent = `❌ Wrong! Answer: ${data.correctAnswer}`;
-                    }
-                    document.getElementById("headerScore").textContent =
-                        `Score: ${data.score}`;
+                const feedback = document.getElementById("feedback");
+                if (data.isCorrect) {
+                    feedback.className = "feedback correct";
+                    feedback.textContent = "✅ Correct! +10 points";
+                } else {
+                    feedback.className = "feedback wrong";
+                    feedback.textContent = `❌ Wrong! Answer: ${data.correctAnswer}`;
                 }
-
-                document.getElementById("answerQueue").textContent =
-                    "Waiting for other players...";
+                document.getElementById("headerScore").textContent =
+                    `Score: ${data.score}`;
             }
 
             // ═══════════════════════════════════════════════════════════

@@ -692,7 +692,15 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
       resultMode: settings.result_mode,
     });
 
-    return { success: true };
+    // Return first question in REST response as fallback
+    return {
+      success: true,
+      gameStarted: true,
+      questions: firstQuestions,
+      questionNumber: 1,
+      totalQuestions: settings.question_count,
+      resultMode: settings.result_mode,
+    };
   } catch (error) {
     console.error("Start game error:", error.message);
     return { success: false, message: "Failed to start game" };
@@ -930,6 +938,11 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       if (questionOrder >= settings.question_count) {
         // Game over — send summary
         await endGame(room);
+        return {
+          success: true,
+          ...responseData,
+          gameOver: true,
+        };
       } else {
         // Send next question
         const nextOrder = questionOrder + 1;
@@ -946,6 +959,18 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
           totalQuestions: settings.question_count,
           resultMode: settings.result_mode,
         });
+        // Return next question in REST response as fallback
+        return {
+          success: true,
+          ...responseData,
+          allAnswered: true,
+          nextQuestion: {
+            questions: nextQuestions,
+            questionNumber: nextOrder,
+            totalQuestions: settings.question_count,
+            resultMode: settings.result_mode,
+          },
+        };
       }
     }
 
