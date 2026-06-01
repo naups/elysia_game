@@ -718,16 +718,28 @@
             let totalQuestions = 5;
             let resultMode = "instant";
             let isMaster = false;
+            let roomMasterId = null;
+            let wsAuthenticated = false;
+            let wsQueue = [];
 
             // ═══════════════════════════════════════════════════════════
             //  SCREEN MANAGEMENT
             // ═══════════════════════════════════════════════════════════
 
             function showScreen(screenId) {
-                document
-                    .querySelectorAll(".screen")
-                    .forEach((s) => s.classList.remove("active"));
-                document.getElementById(screenId).classList.add("active");
+                const screens = document.querySelectorAll(".screen");
+                screens.forEach((s) => {
+                    s.style.display = "none";
+                    s.classList.remove("active");
+                });
+                const target = document.getElementById(screenId);
+                target.classList.add("active");
+                // Loading screen uses flex, others use block
+                if (screenId === "loadingScreen") {
+                    target.style.display = "flex";
+                } else {
+                    target.style.display = "block";
+                }
             }
 
             function updateProgress() {
@@ -800,6 +812,7 @@
                         localStorage.setItem("authToken", authToken);
                         localStorage.setItem("userId", currentUser.id);
                         localStorage.setItem("username", currentUser.username);
+                        localStorage.setItem("userAvatar", currentUser.avatar);
                         enterLobby();
                     } else {
                         showScreen("loginScreen");
@@ -819,6 +832,7 @@
                 currentUser = null;
                 authToken = null;
                 currentRoomCode = null;
+                roomMasterId = null;
                 localStorage.removeItem("authToken");
                 localStorage.removeItem("userId");
                 localStorage.removeItem("username");
@@ -849,31 +863,50 @@
             // ═══════════════════════════════════════════════════════════
 
             function connectWS() {
+                if (ws && ws.readyState === WebSocket.OPEN) return;
+
                 const protocol =
                     location.protocol === "https:" ? "wss:" : "ws:";
                 ws = new WebSocket(`${protocol}//${location.host}/ws`);
+                wsAuthenticated = false;
+                wsQueue = [];
 
                 ws.onopen = () => {
                     ws.send(JSON.stringify({ type: "auth", token: authToken }));
-                    // Rejoin room if reconnecting
-                    const savedRoom = localStorage.getItem("roomCode");
-                    if (savedRoom) {
-                        currentRoomCode = savedRoom;
-                        ws.send(
-                            JSON.stringify({
-                                type: "join_room",
-                                roomCode: savedRoom,
-                            }),
-                        );
-                    }
                 };
 
                 ws.onmessage = (event) => {
                     const data = JSON.parse(event.data);
+
+                    // Handle auth_ok first — flush queued messages
+                    if (data.type === "auth_ok") {
+                        wsAuthenticated = true;
+                        // Rejoin room if reconnecting
+                        const savedRoom = localStorage.getItem("roomCode");
+                        if (savedRoom) {
+                            currentRoomCode = savedRoom;
+                            wsQueue.push({
+                                type: "join_room",
+                                roomCode: savedRoom,
+                            });
+                        }
+                        // Flush queue
+                        for (const msg of wsQueue) {
+                            ws.send(JSON.stringify(msg));
+                        }
+                        wsQueue = [];
+                        // Refresh room state after rejoin
+                        if (savedRoom) {
+                            setTimeout(() => refreshRoomState(), 300);
+                        }
+                        return;
+                    }
+
                     handleWSMessage(data);
                 };
 
                 ws.onclose = () => {
+                    wsAuthenticated = false;
                     // Auto-reconnect after 3 seconds
                     if (authToken) {
                         setTimeout(connectWS, 3000);
@@ -889,8 +922,10 @@
             }
 
             function wsSend(data) {
-                if (ws && ws.readyState === WebSocket.OPEN) {
+                if (ws && ws.readyState === WebSocket.OPEN && wsAuthenticated) {
                     ws.send(JSON.stringify(data));
+                } else {
+                    wsQueue.push(data);
                 }
             }
 
@@ -1042,6 +1077,20 @@
                         currentRoomCode = data.room.code;
                         localStorage.setItem("roomCode", currentRoomCode);
                         isMaster = true;
+                        // Add masterId so showRoomScreen can render correctly
+                        data.room.masterId = currentUser.id;
+                        // Add master as first player for room display
+                        if (!data.room.players) {
+                            data.room.players = [
+                                {
+                                    userId: currentUser.id,
+                                    username: currentUser.username,
+                                    avatar: currentUser.avatar,
+                                    isReady: true,
+                                    score: 0,
+                                },
+                            ];
+                        }
                         wsSend({
                             type: "join_room",
                             roomCode: currentRoomCode,
@@ -1093,6 +1142,7 @@
                     } catch (_) {}
                     wsSend({ type: "leave_room" });
                     currentRoomCode = null;
+                    roomMasterId = null;
                     localStorage.removeItem("roomCode");
                     enterLobby();
                 }
@@ -1171,40 +1221,49 @@
                     </div>
                 `;
 
-                // Master controls
+                // Set master flag BEFORE rendering
+                roomMasterId = room.masterId;
                 isMaster = room.masterId === currentUser.id;
                 document
                     .getElementById("startBtn")
                     .classList.toggle("hidden", !isMaster);
 
+                // Update ready button for master (always ready)
+                const readyBtn = document.getElementById("readyBtn");
+                if (isMaster) {
+                    readyBtn.textContent = "Not Ready";
+                    readyBtn.className = "btn btn-danger";
+                } else {
+                    readyBtn.textContent = "Ready";
+                    readyBtn.className = "btn btn-primary";
+                }
+
                 // Player list
-                renderPlayerList(room.players);
+                renderPlayerList(room.players, room.masterId);
             }
 
-            function renderPlayerList(players) {
+            function renderPlayerList(players, masterId) {
                 const list = document.getElementById("playerList");
                 list.innerHTML = "";
                 players.forEach((p) => {
+                    const isPlayerMaster = p.userId === masterId;
+                    const isMe = p.userId === currentUser.id;
                     const li = document.createElement("li");
                     li.className = "player-item";
                     li.id = `player_${p.userId}`;
-                    const masterBadge =
-                        p.userId ===
-                        document.getElementById("roomCodeDisplay").textContent
-                            ? ""
-                            : "";
 
                     li.innerHTML = `
                         <img src="${p.avatar}" alt="${p.username}" />
                         <span class="player-name">
                             ${p.username}
-                            ${p.userId === currentUser.id ? " (You)" : ""}
+                            ${isMe ? " (You)" : ""}
                         </span>
+                        ${isPlayerMaster ? '<span class="player-badge" style="background:#fff3e0;color:#e65100">👑 Master</span>' : ""}
                         <span class="player-badge ${p.isReady ? "badge-ready" : "badge-not-ready"}">
                             ${p.isReady ? "✓ Ready" : "✗ Not Ready"}
                         </span>
                         ${
-                            isMaster && p.userId !== currentUser.id
+                            isMaster && !isMe && !isPlayerMaster
                                 ? `<button class="kick-btn" onclick="kickPlayer('${p.userId}')">Kick</button>`
                                 : ""
                         }
@@ -1216,15 +1275,18 @@
             function addPlayerToList(player) {
                 const list = document.getElementById("playerList");
                 if (document.getElementById(`player_${player.userId}`)) return;
+                const isPlayerMaster = player.userId === roomMasterId;
+                const isMe = player.userId === currentUser.id;
                 const li = document.createElement("li");
                 li.className = "player-item";
                 li.id = `player_${player.userId}`;
                 li.innerHTML = `
                     <img src="${player.avatar}" alt="${player.username}" />
-                    <span class="player-name">${player.username}</span>
+                    <span class="player-name">${player.username}${isMe ? " (You)" : ""}</span>
+                    ${isPlayerMaster ? '<span class="player-badge" style="background:#fff3e0;color:#e65100">👑 Master</span>' : ""}
                     <span class="player-badge badge-not-ready">✗ Not Ready</span>
                     ${
-                        isMaster
+                        isMaster && !isMe && !isPlayerMaster
                             ? `<button class="kick-btn" onclick="kickPlayer('${player.userId}')">Kick</button>`
                             : ""
                     }
@@ -1537,6 +1599,7 @@
 
             function backToLobby() {
                 currentRoomCode = null;
+                roomMasterId = null;
                 localStorage.removeItem("roomCode");
                 questionOrder = 0;
                 enterLobby();
@@ -1563,7 +1626,52 @@
             window.onload = async () => {
                 const valid = await validateSession();
                 if (valid) {
-                    enterLobby();
+                    // Set avatar from stored data
+                    const savedAvatar = localStorage.getItem("userAvatar");
+                    if (savedAvatar) currentUser.avatar = savedAvatar;
+
+                    const savedRoom = localStorage.getItem("roomCode");
+                    if (savedRoom) {
+                        // Try to reconnect to room
+                        document.getElementById("userAvatar").src =
+                            currentUser.avatar ||
+                            `https://api.dicebear.com/7.x/thumbs/svg?seed=${currentUser.username}`;
+                        document.getElementById("userName").textContent =
+                            currentUser.username;
+                        showUserHeader(true);
+                        currentRoomCode = savedRoom;
+                        showScreen("loadingScreen");
+                        connectWS();
+                        // Fetch room state after WS connects
+                        setTimeout(async () => {
+                            try {
+                                const data = await api(
+                                    "GET",
+                                    `/api/rooms/${savedRoom}`,
+                                );
+                                if (
+                                    data.success &&
+                                    data.room.status === "waiting"
+                                ) {
+                                    isMaster =
+                                        data.room.masterId === currentUser.id;
+                                    showRoomScreen(data.room);
+                                    wsSend({
+                                        type: "join_room",
+                                        roomCode: savedRoom,
+                                    });
+                                } else {
+                                    // Room ended or not found
+                                    localStorage.removeItem("roomCode");
+                                    enterLobby();
+                                }
+                            } catch (_) {
+                                enterLobby();
+                            }
+                        }, 500);
+                    } else {
+                        enterLobby();
+                    }
                 } else {
                     showScreen("loginScreen");
                 }
