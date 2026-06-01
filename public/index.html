@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Trivia Quiz Game</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 20px;
+            }
+
+            .container {
+                background: white;
+                border-radius: 20px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                max-width: 600px;
+                width: 100%;
+                overflow: hidden;
+            }
+
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 20px;
+                text-align: center;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+                margin-bottom: 5px;
+            }
+
+            .header .score {
+                font-size: 1.2em;
+                opacity: 0.9;
+            }
+
+            .progress-bar {
+                background: #e0e0e0;
+                height: 8px;
+                margin-top: 10px;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+
+            .progress-fill {
+                background: #4caf50;
+                height: 100%;
+                transition: width 0.3s ease;
+            }
+
+            .content {
+                padding: 30px;
+            }
+
+            /* Login Screen */
+            .login-screen {
+                text-align: center;
+            }
+
+            .login-screen h2 {
+                color: #333;
+                margin-bottom: 20px;
+            }
+
+            .login-screen input {
+                width: 100%;
+                padding: 15px;
+                font-size: 16px;
+                border: 2px solid #ddd;
+                border-radius: 10px;
+                margin-bottom: 15px;
+                transition: border-color 0.3s;
+            }
+
+            .login-screen input:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+
+            .btn {
+                width: 100%;
+                padding: 15px;
+                font-size: 16px;
+                border: none;
+                border-radius: 10px;
+                cursor: pointer;
+                transition:
+                    transform 0.2s,
+                    box-shadow 0.2s;
+            }
+
+            .btn-primary {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+
+            .btn-primary:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            }
+
+            .btn-success {
+                background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+                color: white;
+            }
+
+            .btn-success:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 5px 20px rgba(76, 175, 80, 0.4);
+            }
+
+            /* Quiz Screen */
+            .quiz-screen {
+                display: none;
+            }
+
+            .question-text {
+                font-size: 1.3em;
+                color: #333;
+                margin-bottom: 25px;
+                line-height: 1.5;
+            }
+
+            .options {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .option-btn {
+                padding: 15px 20px;
+                font-size: 16px;
+                border: 2px solid #e0e0e0;
+                border-radius: 10px;
+                background: white;
+                cursor: pointer;
+                text-align: left;
+                transition: all 0.3s;
+            }
+
+            .option-btn:hover:not(.disabled) {
+                border-color: #667eea;
+                background: #f5f5ff;
+            }
+
+            .option-btn.selected {
+                border-color: #667eea;
+                background: #e8eaff;
+            }
+
+            .option-btn.correct {
+                border-color: #4caf50;
+                background: #e8f5e9;
+                color: #2e7d32;
+            }
+
+            .option-btn.wrong {
+                border-color: #f44336;
+                background: #ffebee;
+                color: #c62828;
+            }
+
+            .option-btn.disabled {
+                cursor: not-allowed;
+                opacity: 0.7;
+            }
+
+            .feedback {
+                margin-top: 20px;
+                padding: 15px;
+                border-radius: 10px;
+                text-align: center;
+                font-size: 1.1em;
+                font-weight: bold;
+                display: none;
+            }
+
+            .feedback.correct {
+                display: block;
+                background: #e8f5e9;
+                color: #2e7d32;
+            }
+
+            .feedback.wrong {
+                display: block;
+                background: #ffebee;
+                color: #c62828;
+            }
+
+            /* Result Screen */
+            .result-screen {
+                display: none;
+                text-align: center;
+            }
+
+            .result-screen h2 {
+                color: #333;
+                margin-bottom: 15px;
+            }
+
+            .final-score {
+                font-size: 4em;
+                font-weight: bold;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                margin: 20px 0;
+            }
+
+            .result-message {
+                font-size: 1.2em;
+                color: #666;
+                margin-bottom: 30px;
+            }
+
+            /* Loading */
+            .loading {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 40px;
+            }
+
+            .spinner {
+                width: 40px;
+                height: 40px;
+                border: 4px solid #e0e0e0;
+                border-top-color: #667eea;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            .error-msg {
+                color: #f44336;
+                margin-top: 10px;
+                font-size: 14px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎮 Trivia Quiz</h1>
+                <div class="score" id="headerScore">Score: 0</div>
+                <div class="progress-bar">
+                    <div
+                        class="progress-fill"
+                        id="progressFill"
+                        style="width: 0%"
+                    ></div>
+                </div>
+            </div>
+
+            <div class="content">
+                <!-- Login Screen -->
+                <div id="loginScreen" class="login-screen">
+                    <h2>Welcome to Trivia Quiz!</h2>
+                    <input
+                        type="text"
+                        id="usernameInput"
+                        placeholder="Enter your username"
+                        maxlength="50"
+                    />
+                    <button class="btn btn-primary" onclick="registerUser()">
+                        Start Playing
+                    </button>
+                    <div id="loginError" class="error-msg"></div>
+                </div>
+
+                <!-- Loading -->
+                <div id="loadingScreen" class="loading" style="display: none">
+                    <div class="spinner"></div>
+                </div>
+
+                <!-- Quiz Screen -->
+                <div id="quizScreen" class="quiz-screen">
+                    <div class="question-text" id="questionText"></div>
+                    <div class="options" id="optionsContainer"></div>
+                    <div class="feedback" id="feedback"></div>
+                </div>
+
+                <!-- Result Screen -->
+                <div
+                    id="resultScreen"
+                    class="result-screen"
+                    style="display: none"
+                >
+                    <h2>🎉 Quiz Complete!</h2>
+                    <div class="final-score" id="finalScore">0</div>
+                    <div class="result-message" id="resultMessage"></div>
+                    <button class="btn btn-success" onclick="startNewQuiz()">
+                        Play Again
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const API_BASE = "";
+            let currentUser = null;
+            let currentQuestion = null;
+            let questionsAnswered = 0;
+            const TOTAL_QUESTIONS = 5;
+
+            // Show/hide screens
+            function showScreen(screen) {
+                document.getElementById("loginScreen").style.display = "none";
+                document.getElementById("loadingScreen").style.display = "none";
+                document.getElementById("quizScreen").style.display = "none";
+                document.getElementById("resultScreen").style.display = "none";
+
+                if (screen === "login")
+                    document.getElementById("loginScreen").style.display =
+                        "block";
+                if (screen === "loading")
+                    document.getElementById("loadingScreen").style.display =
+                        "flex";
+                if (screen === "quiz")
+                    document.getElementById("quizScreen").style.display =
+                        "block";
+                if (screen === "result")
+                    document.getElementById("resultScreen").style.display =
+                        "block";
+            }
+
+            // Update progress bar
+            function updateProgress() {
+                const progress = (questionsAnswered / TOTAL_QUESTIONS) * 100;
+                document.getElementById("progressFill").style.width =
+                    progress + "%";
+            }
+
+            // Register user
+            async function registerUser() {
+                const username = document
+                    .getElementById("usernameInput")
+                    .value.trim();
+                const errorDiv = document.getElementById("loginError");
+
+                if (!username || username.length < 2) {
+                    errorDiv.textContent =
+                        "Username must be at least 2 characters";
+                    return;
+                }
+
+                showScreen("loading");
+
+                try {
+                    const response = await fetch(`${API_BASE}/api/register`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ username }),
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        currentUser = data.user;
+                        localStorage.setItem("userId", currentUser.id);
+                        localStorage.setItem("username", currentUser.username);
+                        startNewQuiz();
+                    } else {
+                        showScreen("login");
+                        errorDiv.textContent =
+                            data.message || "Registration failed";
+                    }
+                } catch (error) {
+                    showScreen("login");
+                    errorDiv.textContent =
+                        "Connection error. Please try again.";
+                    console.error("Register error:", error);
+                }
+            }
+
+            // Get next question
+            async function getNextQuestion() {
+                showScreen("loading");
+
+                try {
+                    const response = await fetch(
+                        `${API_BASE}/api/questions/next`,
+                        {
+                            headers: { "X-User-Id": currentUser.id },
+                        },
+                    );
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        currentQuestion = data.question;
+                        document.getElementById("headerScore").textContent =
+                            `Score: ${data.currentScore}`;
+                        displayQuestion();
+                        showScreen("quiz");
+                    } else {
+                        showScreen("login");
+                        document.getElementById("loginError").textContent =
+                            data.message;
+                    }
+                } catch (error) {
+                    console.error("Get question error:", error);
+                    showScreen("login");
+                    document.getElementById("loginError").textContent =
+                        "Connection error";
+                }
+            }
+
+            // Display question
+            function displayQuestion() {
+                document.getElementById("questionText").textContent =
+                    currentQuestion.text;
+                const container = document.getElementById("optionsContainer");
+                container.innerHTML = "";
+                document.getElementById("feedback").className = "feedback";
+                document.getElementById("feedback").textContent = "";
+
+                currentQuestion.options.forEach((option, index) => {
+                    const btn = document.createElement("button");
+                    btn.className = "option-btn";
+                    btn.textContent = option;
+                    btn.onclick = () => selectAnswer(option, btn);
+                    container.appendChild(btn);
+                });
+            }
+
+            // Select answer
+            async function selectAnswer(answer, btn) {
+                // Disable all buttons
+                const buttons = document.querySelectorAll(".option-btn");
+                buttons.forEach((b) => b.classList.add("disabled"));
+
+                try {
+                    const response = await fetch(`${API_BASE}/api/answer`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            questionId: currentQuestion.id,
+                            userAnswer: answer,
+                            userId: currentUser.id,
+                        }),
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Highlight correct/wrong
+                        buttons.forEach((b) => {
+                            if (b.textContent === data.correctAnswer) {
+                                b.classList.add("correct");
+                            } else if (b === btn && !data.isCorrect) {
+                                b.classList.add("wrong");
+                            }
+                        });
+
+                        // Show feedback
+                        const feedback = document.getElementById("feedback");
+                        if (data.isCorrect) {
+                            feedback.className = "feedback correct";
+                            feedback.textContent = "✅ Correct! +10 points";
+                        } else {
+                            feedback.className = "feedback wrong";
+                            feedback.textContent = `❌ Wrong! The answer was: ${data.correctAnswer}`;
+                        }
+
+                        // Update score
+                        document.getElementById("headerScore").textContent =
+                            `Score: ${data.score}`;
+                        questionsAnswered++;
+                        updateProgress();
+
+                        // Wait, then show next question or results
+                        setTimeout(() => {
+                            if (questionsAnswered >= TOTAL_QUESTIONS) {
+                                showResults(data.score);
+                            } else {
+                                getNextQuestion();
+                            }
+                        }, 1500);
+                    }
+                } catch (error) {
+                    console.error("Submit answer error:", error);
+                }
+            }
+
+            // Show results
+            function showResults(finalScore) {
+                document.getElementById("finalScore").textContent = finalScore;
+
+                let message = "";
+                if (finalScore >= 40)
+                    message = "🏆 Amazing! You're a trivia master!";
+                else if (finalScore >= 30)
+                    message = "🌟 Great job! You know your stuff!";
+                else if (finalScore >= 20)
+                    message = "👍 Good effort! Keep practicing!";
+                else message = "💪 Keep trying! You'll get better!";
+
+                document.getElementById("resultMessage").textContent = message;
+                showScreen("result");
+            }
+
+            // Start new quiz
+            function startNewQuiz() {
+                questionsAnswered = 0;
+                updateProgress();
+                getNextQuestion();
+            }
+
+            // Check if user is already logged in
+            window.onload = function () {
+                const savedUserId = localStorage.getItem("userId");
+                const savedUsername = localStorage.getItem("username");
+
+                if (savedUserId && savedUsername) {
+                    currentUser = { id: savedUserId, username: savedUsername };
+                    startNewQuiz();
+                } else {
+                    showScreen("login");
+                }
+            };
+
+            // Allow Enter key to submit
+            document
+                .getElementById("usernameInput")
+                .addEventListener("keypress", (e) => {
+                    if (e.key === "Enter") registerUser();
+                });
+        </script>
+    </body>
+</html>
