@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Tabel Users (Penyimpanan Skor)
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -34,9 +36,11 @@ CREATE TABLE IF NOT EXISTS rooms (
         "question_source": "database",
         "question_mode": "same_for_all",
         "result_mode": "instant",
+        "question_delay_seconds": 10,
         "custom_questions": []
     }',
     status VARCHAR(20) DEFAULT 'waiting',
+    current_question_order INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -55,6 +59,7 @@ CREATE TABLE IF NOT EXISTS room_players (
 CREATE TABLE IF NOT EXISTS room_questions (
     id SERIAL PRIMARY KEY,
     room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id),
     question_id INTEGER REFERENCES questions(id),
     custom_question JSONB,
     question_order INTEGER NOT NULL
@@ -66,6 +71,7 @@ CREATE TABLE IF NOT EXISTS room_answers (
     room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
     user_id UUID REFERENCES users(id),
     question_id INTEGER,
+    question_order INTEGER NOT NULL,
     answer TEXT,
     is_correct BOOLEAN,
     answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -79,6 +85,20 @@ CREATE TABLE IF NOT EXISTS game_history (
     is_correct BOOLEAN,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS game_history_one_answer_per_question
+    ON game_history(user_id, question_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS room_answers_one_answer_per_question
+    ON room_answers(room_id, user_id, question_order);
+
+CREATE UNIQUE INDEX IF NOT EXISTS room_questions_same_for_all_order
+    ON room_questions(room_id, question_order)
+    WHERE user_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS room_questions_per_player_order
+    ON room_questions(room_id, user_id, question_order)
+    WHERE user_id IS NOT NULL;
 
 -- Insert sample questions
 INSERT INTO questions (question_text, correct_answer, options) VALUES

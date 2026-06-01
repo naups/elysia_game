@@ -8,6 +8,27 @@ try {
     "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS current_question_order INTEGER DEFAULT 0",
   );
   console.log("OK: Added current_question_order column");
+  await pool.query(
+    "ALTER TABLE room_questions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)",
+  );
+  console.log("OK: Added room_questions.user_id column");
+  await pool.query(
+    "ALTER TABLE room_answers ADD COLUMN IF NOT EXISTS question_order INTEGER",
+  );
+  console.log("OK: Added room_answers.question_order column");
+  await pool.query(
+    "UPDATE room_answers SET question_order = COALESCE(question_order, question_id, 0) WHERE question_order IS NULL",
+  );
+  await pool.query(
+    "ALTER TABLE room_answers ALTER COLUMN question_order SET NOT NULL",
+  );
+  console.log("OK: Backfilled room_answers.question_order");
+  await pool.query(
+    `UPDATE rooms
+     SET settings = settings || '{"question_delay_seconds": 10}'::jsonb
+     WHERE NOT (settings ? 'question_delay_seconds')`,
+  );
+  console.log("OK: Backfilled rooms.settings.question_delay_seconds");
 } catch (e) {
   console.log("SKIP:", e.message);
 }

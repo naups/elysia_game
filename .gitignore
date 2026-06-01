@@ -1,7 +1,5 @@
 node_modules/
 .env
-bun.lock
 dist/
 *.log
-fix-task.md
-TASK.md
+*.md

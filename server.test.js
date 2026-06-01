@@ -57,6 +57,10 @@ async function registerUser(username) {
   return json;
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  AUTH TESTS
 // ═══════════════════════════════════════════════════════════════════
@@ -94,6 +98,12 @@ describe("POST /api/register", () => {
   test("rejects empty username", async () => {
     const json = await registerUser("");
     expect(json.success).toBe(false);
+  });
+
+  test("rejects usernames with markup characters", async () => {
+    const json = await registerUser("<img src=x onerror=alert(1)>");
+    expect(json.success).toBe(false);
+    expect(json.message).toContain("letters");
   });
 });
 
@@ -136,6 +146,31 @@ describe("GET /api/auth/validate", () => {
   test("rejects missing token", async () => {
     const { json } = await api("GET", "/api/auth/validate");
     expect(json.success).toBe(false);
+  });
+
+  test("rejects a cached token after it expires in the database", async () => {
+    const reg = await registerUser("expired_test_" + Date.now());
+
+    const { json: validBeforeExpiry } = await api(
+      "GET",
+      "/api/auth/validate",
+      null,
+      reg.token,
+    );
+    expect(validBeforeExpiry.success).toBe(true);
+
+    await testPool.query(
+      "UPDATE sessions SET expires_at = NOW() - INTERVAL '1 second' WHERE token = $1",
+      [reg.token],
+    );
+
+    const { json: validAfterExpiry } = await api(
+      "GET",
+      "/api/auth/validate",
+      null,
+      reg.token,
+    );
+    expect(validAfterExpiry.success).toBe(false);
   });
 });
 
@@ -234,6 +269,34 @@ describe("POST /api/answer", () => {
     expect(json.success).toBe(true);
     expect(json.isCorrect).toBe(true);
   });
+
+  test("does not award points twice for the same solo question", async () => {
+    const reg = await registerUser("dupe_solo_" + Date.now());
+    const { json: q } = await api(
+      "GET",
+      "/api/questions/next",
+      null,
+      reg.token,
+    );
+
+    const row = await testPool.query(
+      "SELECT correct_answer FROM questions WHERE id = $1",
+      [q.question.id],
+    );
+
+    const answerBody = {
+      questionId: q.question.id,
+      userAnswer: row.rows[0].correct_answer,
+    };
+    const first = await api("POST", "/api/answer", answerBody, reg.token);
+    const second = await api("POST", "/api/answer", answerBody, reg.token);
+
+    expect(first.json.success).toBe(true);
+    expect(first.json.score).toBe(10);
+    expect(second.json.success).toBe(true);
+    expect(second.json.isDuplicate).toBe(true);
+    expect(second.json.score).toBe(10);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -243,7 +306,7 @@ describe("POST /api/answer", () => {
 describe("GET /api/score/:userId", () => {
   test("returns user score with avatar", async () => {
     const reg = await registerUser("score_test_" + Date.now());
-    const { json } = await api("GET", `/api/score/${reg.user.id}`);
+    const { json } = await api("GET", `/api/score/${reg.user.id}`, null, reg.token);
     expect(json.success).toBe(true);
     expect(json.user.id).toBe(reg.user.id);
     expect(json.user.avatar).toBeDefined();
@@ -253,8 +316,24 @@ describe("GET /api/score/:userId", () => {
     const { json } = await api(
       "GET",
       "/api/score/00000000-0000-0000-0000-000000000000",
+      null,
+      "invalidtoken123",
     );
     expect(json.success).toBe(false);
+  });
+
+  test("rejects requests for another user's score", async () => {
+    const owner = await registerUser("score_owner_" + Date.now());
+    const other = await registerUser("score_other_" + Date.now());
+
+    const { json } = await api(
+      "GET",
+      `/api/score/${owner.user.id}`,
+      null,
+      other.token,
+    );
+    expect(json.success).toBe(false);
+    expect(json.message).toContain("Forbidden");
   });
 });
 
@@ -275,7 +354,7 @@ describe("GET /api/history/:userId", () => {
       reg.token,
     );
 
-    const { json } = await api("GET", `/api/history/${reg.user.id}`);
+    const { json } = await api("GET", `/api/history/${reg.user.id}`, null, reg.token);
     expect(json.success).toBe(true);
     expect(Array.isArray(json.history)).toBe(true);
     expect(json.history.length).toBeGreaterThan(0);
@@ -306,6 +385,7 @@ describe("Room Management", () => {
     expect(json.room.code).toBeDefined();
     expect(json.room.code.length).toBe(6);
     expect(json.room.settings.max_players).toBe(4);
+    expect(json.room.settings.question_delay_seconds).toBe(10);
   });
 
   test("joins a room", async () => {
@@ -413,6 +493,128 @@ describe("Room Management", () => {
     );
     expect(json.success).toBe(true);
   });
+
+  test("finishes a custom-question multiplayer game after all players answer", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      {
+        maxPlayers: 2,
+        questionCount: 1,
+        questionSource: "custom",
+        questionDelaySeconds: 0,
+        customQuestions: [
+          {
+            text: "Pick the safe answer",
+            options: ["safe", "unsafe", "maybe", "none"],
+            correct_answer: "safe",
+          },
+        ],
+      },
+      master.token,
+    );
+    const code = created.room.code;
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+    await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
+
+    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    expect(started.json.success).toBe(true);
+
+    const firstAnswer = await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "safe", questionOrder: 1 },
+      master.token,
+    );
+    expect(firstAnswer.json.success).toBe(true);
+    expect(firstAnswer.json.gameOver).toBeUndefined();
+
+    const secondAnswer = await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "safe", questionOrder: 1 },
+      player1.token,
+    );
+    expect(secondAnswer.json.success).toBe(true);
+    expect(secondAnswer.json.gameOverScheduled).toBe(true);
+
+    await wait(100);
+
+    const restored = await api("GET", `/api/rooms/${code}/state`, null, master.token);
+    expect(restored.json.success).toBe(true);
+    expect(restored.json.finished).toBe(true);
+    expect(restored.json.summary.length).toBe(2);
+    expect(restored.json.summary[0].answers[0].questionText).toBe(
+      "Pick the safe answer",
+    );
+  });
+
+  test("advances everyone to the next question only after the configured delay", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      {
+        maxPlayers: 2,
+        questionCount: 2,
+        questionSource: "custom",
+        questionDelaySeconds: 1,
+        customQuestions: [
+          {
+            text: "First question",
+            options: ["A", "B", "C", "D"],
+            correct_answer: "A",
+          },
+          {
+            text: "Second question",
+            options: ["A", "B", "C", "D"],
+            correct_answer: "B",
+          },
+        ],
+      },
+      master.token,
+    );
+    const code = created.room.code;
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+    await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
+
+    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    expect(started.json.success).toBe(true);
+
+    await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "A", questionOrder: 1 },
+      master.token,
+    );
+    const lastAnswer = await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "A", questionOrder: 1 },
+      player1.token,
+    );
+    expect(lastAnswer.json.success).toBe(true);
+    expect(lastAnswer.json.nextQuestionScheduled).toBe(true);
+    expect(lastAnswer.json.nextQuestion).toBeUndefined();
+
+    const beforeDelay = await api(
+      "GET",
+      `/api/rooms/${code}/state`,
+      null,
+      master.token,
+    );
+    expect(beforeDelay.json.gameState.questionNumber).toBe(1);
+
+    await wait(1200);
+
+    const afterDelay = await api(
+      "GET",
+      `/api/rooms/${code}/state`,
+      null,
+      player1.token,
+    );
+    expect(afterDelay.json.gameState.questionNumber).toBe(2);
+    expect(afterDelay.json.gameState.questions.all.text).toBe("Second question");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -451,7 +653,7 @@ describe("Full Game Flow", () => {
       totalScore += ans.isCorrect ? 10 : 0;
     }
 
-    const { json: score } = await api("GET", `/api/score/${reg.user.id}`);
+    const { json: score } = await api("GET", `/api/score/${reg.user.id}`, null, reg.token);
     expect(score.success).toBe(true);
     expect(score.user.total_score).toBe(totalScore);
   });
