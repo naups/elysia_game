@@ -56,6 +56,122 @@ function getBearerToken(headers) {
   return headers["authorization"]?.replace(/^Bearer\s+/i, "") || "";
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  ZERO-DEPENDENCY JWT (Node crypto, no external libs)
+// ═══════════════════════════════════════════════════════════════════
+
+function base64UrlEncode(strOrObj) {
+  const str =
+    typeof strOrObj === "string" ? strOrObj : JSON.stringify(strOrObj);
+  return Buffer.from(str)
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+function base64UrlDecode(str) {
+  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4) base64 += "=";
+  return Buffer.from(base64, "base64").toString("utf8");
+}
+
+function signJwt(payload, secret, expiresInStr = "15m") {
+  const header = { alg: "HS256", typ: "JWT" };
+  const now = Math.floor(Date.now() / 1000);
+
+  let exp = now + 15 * 60;
+  const match = expiresInStr.match(/^(\d+)([mdh])$/);
+  if (match) {
+    const val = parseInt(match[1]);
+    const unit = match[2];
+    if (unit === "m") exp = now + val * 60;
+    else if (unit === "h") exp = now + val * 3600;
+    else if (unit === "d") exp = now + val * 86400;
+  }
+
+  const fullPayload = { ...payload, iat: now, exp };
+  const encodedHeader = base64UrlEncode(header);
+  const encodedPayload = base64UrlEncode(fullPayload);
+  const signatureInput = `${encodedHeader}.${encodedPayload}`;
+
+  const signature = crypto
+    .createHmac("sha256", secret)
+    .update(signatureInput)
+    .digest("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  return `${signatureInput}.${signature}`;
+}
+
+function verifyJwt(token, secret) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+
+    const [encodedHeader, encodedPayload, signature] = parts;
+    const signatureInput = `${encodedHeader}.${encodedPayload}`;
+
+    const expectedSignature = crypto
+      .createHmac("sha256", secret)
+      .update(signatureInput)
+      .digest("base64")
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+
+    if (signature !== expectedSignature) return null;
+
+    const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    if (payload.exp && Math.floor(Date.now() / 1000) >= payload.exp)
+      return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RATE LIMITER (in-memory, per IP)
+// ═══════════════════════════════════════════════════════════════════
+
+const rateLimitStore = new Map();
+
+function checkRateLimit(ip, limit = 5, windowMs = 60000) {
+  const now = Date.now();
+  if (!rateLimitStore.has(ip)) {
+    rateLimitStore.set(ip, [now]);
+    return true;
+  }
+  const timestamps = rateLimitStore.get(ip).filter((t) => now - t < windowMs);
+  if (timestamps.length >= limit) return false;
+  timestamps.push(now);
+  rateLimitStore.set(ip, timestamps);
+  return true;
+}
+
+function getSecureAuthEnabled() {
+  return process.env.ENABLE_SECURE_AUTH === "true";
+}
+
+function getJwtAccessSecret() {
+  return process.env.JWT_ACCESS_SECRET || "change-me-access-secret";
+}
+
+function getJwtRefreshSecret() {
+  return process.env.JWT_REFRESH_SECRET || "change-me-refresh-secret";
+}
+
+function getAccessTokenExpiresIn() {
+  return process.env.ACCESS_TOKEN_EXPIRES_IN || "15m";
+}
+
+function getRefreshTokenExpiresIn() {
+  return process.env.REFRESH_TOKEN_EXPIRES_IN || "7d";
+}
+
 function getSocketId(ws) {
   return ws.raw ?? ws.id ?? ws.data?.id;
 }
