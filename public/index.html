@@ -4,596 +4,218 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Trivia Quiz — Multiplayer</title>
-        <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
+                <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            :root {
+                --primary: #4f46e5;
+                --primary-hover: #4338ca;
+                --primary-light: #e0e7ff;
+                --secondary: #8b5cf6;
+                --success: #0d9488;
+                --success-light: #ccfbf1;
+                --error: #e11d48;
+                --error-light: #ffe4e6;
+                --bg-base: #f8fafc;
+                --card-bg: rgba(255, 255, 255, 0.92);
+                --text-dark: #0f172a;
+                --text-muted: #64748b;
+                --border-color: #e2e8f0;
+                --radius-lg: 24px;
+                --radius-md: 16px;
+                --shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
+                --shadow-md: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.05);
             }
             body {
-                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                font-family: "Inter", "Segoe UI", sans-serif;
+                background-color: var(--bg-base);
                 min-height: 100vh;
                 display: flex;
                 justify-content: center;
                 align-items: center;
                 padding: 20px;
-            }
-            .container {
-                background: white;
-                border-radius: 20px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                max-width: 700px;
-                width: 100%;
-                overflow: hidden;
-            }
-            .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 20px;
-                text-align: center;
                 position: relative;
+                overflow-x: hidden;
             }
-            .header h1 {
-                font-size: 1.8em;
-                margin-bottom: 5px;
+            body::before, body::after {
+                content: ''; position: fixed; border-radius: 50%; filter: blur(100px); z-index: -1; opacity: 0.6;
             }
-            .header .score {
-                font-size: 1.2em;
-                opacity: 0.9;
-            }
-            .header .user-info {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 10px;
-                margin-top: 8px;
-            }
-            .header .user-info img {
-                width: 32px;
-                height: 32px;
-                border-radius: 50%;
-                border: 2px solid white;
-            }
-            .logout-btn {
-                position: absolute;
-                top: 15px;
-                right: 15px;
-                background: rgba(255, 255, 255, 0.2);
-                border: none;
-                color: white;
-                padding: 6px 14px;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 14px;
-            }
-            .logout-btn:hover {
-                background: rgba(255, 255, 255, 0.35);
-            }
-            .progress-bar {
-                background: #e0e0e0;
-                height: 8px;
-                margin-top: 10px;
-                border-radius: 4px;
+            body::before { width: 50vw; height: 50vh; background: #c7d2fe; top: -10%; left: -10%; }
+            body::after { width: 60vw; height: 60vh; background: #99f6e4; bottom: -20%; right: -10%; opacity: 0.4; }
+
+            .container {
+                background: var(--card-bg);
+                backdrop-filter: blur(20px);
+                border-radius: var(--radius-lg);
+                box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15);
+                max-width: 480px;
+                width: 100%;
                 overflow: hidden;
-            }
-            .progress-fill {
-                background: #4caf50;
-                height: 100%;
-                transition: width 0.3s ease;
-            }
-            .timer-wrap {
-                display: none;
-                margin-bottom: 16px;
-            }
-            .timer-meta {
-                display: flex;
-                justify-content: space-between;
-                color: #666;
-                font-size: 13px;
-                margin-bottom: 6px;
-            }
-            .timer-bar {
-                height: 10px;
-                background: #f1f1f1;
-                border-radius: 999px;
-                overflow: hidden;
-            }
-            .timer-fill {
-                width: 100%;
-                height: 100%;
-                background: linear-gradient(90deg, #2e7d32, #f9a825, #c62828);
-                transition: width 0.2s linear;
-            }
-            .content {
-                padding: 30px;
-            }
-            .screen {
-                display: none;
-            }
-            .screen.active {
-                display: block;
-            }
-            h2 {
-                color: #333;
-                margin-bottom: 20px;
-                text-align: center;
-            }
-            input[type="text"] {
-                width: 100%;
-                padding: 15px;
-                font-size: 16px;
-                border: 2px solid #ddd;
-                border-radius: 10px;
-                margin-bottom: 15px;
-                transition: border-color 0.3s;
-            }
-            input[type="text"]:focus {
-                outline: none;
-                border-color: #667eea;
-            }
-            .btn {
-                width: 100%;
-                padding: 15px;
-                font-size: 16px;
-                border: none;
-                border-radius: 10px;
-                cursor: pointer;
-                transition:
-                    transform 0.2s,
-                    box-shadow 0.2s;
-                margin-bottom: 10px;
-            }
-            .btn:hover {
-                transform: translateY(-2px);
-            }
-            .btn-primary {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-            }
-            .btn-primary:hover {
-                box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-            }
-            .btn-success {
-                background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
-                color: white;
-            }
-            .btn-success:hover {
-                box-shadow: 0 5px 20px rgba(76, 175, 80, 0.4);
-            }
-            .btn-danger {
-                background: linear-gradient(135deg, #ef5350 0%, #c62828 100%);
-                color: white;
-            }
-            .btn-secondary {
-                background: #e0e0e0;
-                color: #333;
-            }
-            .btn-small {
-                width: auto;
-                padding: 8px 16px;
-                font-size: 14px;
-            }
-            .error-msg {
-                color: #ef5350;
-                text-align: center;
-                margin-top: 10px;
-                min-height: 20px;
-            }
-            /* Login */
-            .login-screen {
-                text-align: center;
-            }
-            /* Lobby */
-            .lobby-actions {
-                display: flex;
-                gap: 10px;
-                margin-bottom: 20px;
-            }
-            .lobby-actions .btn {
-                flex: 1;
-            }
-            .active-room-panel {
-                background: #f5f5ff;
-                border: 1px solid #d9ddff;
-                border-radius: 8px;
-                padding: 14px;
-                margin-bottom: 15px;
-                text-align: center;
-            }
-            .active-room-panel strong {
-                color: #667eea;
-                letter-spacing: 2px;
-            }
-            .active-room-actions {
-                display: flex;
-                gap: 8px;
-                justify-content: center;
-                flex-wrap: wrap;
-                margin-top: 10px;
-            }
-            /* Room */
-            .room-code {
-                text-align: center;
-                font-size: 2em;
-                font-weight: bold;
-                color: #667eea;
-                letter-spacing: 8px;
-                margin: 15px 0;
-                padding: 15px;
-                background: #f5f5ff;
-                border-radius: 10px;
-            }
-            .player-list {
-                list-style: none;
-                margin: 15px 0;
-            }
-            .player-item {
-                display: flex;
-                align-items: center;
-                padding: 12px;
-                border-bottom: 1px solid #eee;
-                gap: 12px;
-            }
-            .player-item:last-child {
-                border-bottom: none;
-            }
-            .player-item img {
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
-            }
-            .player-name {
-                flex: 1;
-                font-weight: 600;
-            }
-            .player-badge {
-                font-size: 12px;
-                padding: 3px 8px;
-                border-radius: 12px;
-                font-weight: 600;
-            }
-            .badge-master {
-                background: #fff3e0;
-                color: #e65100;
-            }
-            .badge-ready {
-                background: #e8f5e9;
-                color: #2e7d32;
-            }
-            .badge-not-ready {
-                background: #ffebee;
-                color: #c62828;
-            }
-            .kick-btn {
-                background: #ef5350;
-                color: white;
-                border: none;
-                padding: 5px 10px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 12px;
-            }
-            /* Settings */
-            .settings-panel {
-                background: #f9f9f9;
-                border-radius: 12px;
-                padding: 20px;
-                margin: 15px 0;
-            }
-            .settings-panel h3 {
-                margin-bottom: 15px;
-                color: #555;
-            }
-            .setting-row {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 12px;
-            }
-            .setting-row label {
-                font-weight: 500;
-                color: #555;
-            }
-            .setting-row select,
-            .setting-row input[type="number"] {
-                padding: 8px 12px;
-                border: 2px solid #ddd;
-                border-radius: 8px;
-                font-size: 14px;
-            }
-            /* Quiz */
-            .question-text {
-                font-size: 1.3em;
-                font-weight: 600;
-                color: #333;
-                margin-bottom: 20px;
-                text-align: center;
-            }
-            .options {
+                border: 1px solid rgba(255,255,255,0.7);
                 display: flex;
                 flex-direction: column;
-                gap: 10px;
+                transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             }
+
+            @media (min-width: 768px) {
+                .container { max-width: 1000px; }
+                .screen-grid { display: grid; grid-template-columns: 350px 1fr; gap: 30px; align-items: start; }
+            }
+
+            h1, h2, h3 { font-family: "Plus Jakarta Sans", sans-serif; color: var(--text-dark); }
+            
+            .header {
+                background: transparent; color: var(--text-dark); padding: 24px 30px;
+                display: flex; flex-direction: column; align-items: center;
+                border-bottom: 1px solid var(--border-color); position: relative;
+            }
+            .header h1 { font-size: 1.5em; margin-bottom: 10px; font-weight: 800; }
+            .header .score { font-weight: 600; color: var(--primary); margin-bottom: 10px; font-size: 1.1em; }
+            .header .user-info { display: flex; align-items: center; gap: 12px; }
+            .header .user-info img { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--primary-light); }
+            .header .user-info span { font-weight: 600; font-size: 15px; }
+            
+            .logout-btn {
+                position: absolute; top: 24px; right: 24px;
+                background: #fff; color: var(--text-muted); border: 1px solid var(--border-color);
+                padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer;
+                font-size: 14px; font-weight: 600; transition: all 0.2s;
+            }
+            .logout-btn:hover { background: var(--error-light); color: var(--error); border-color: var(--error-light); }
+            
+            .progress-bar { background: var(--border-color); height: 8px; width: 100%; border-radius: 4px; overflow: hidden; margin-top: 15px; }
+            .progress-fill { background: var(--success); height: 100%; transition: width 0.3s ease; }
+
+            .content { padding: 30px; }
+            @media (max-width: 767px) { .content { padding: 20px; } }
+            .screen { display: none; }
+            .screen.active { display: block; }
+            .screen > h2 { text-align: center; margin-bottom: 24px; font-weight: 700; }
+            
+            input[type="text"], input[type="number"], select {
+                width: 100%; padding: 14px 16px; font-size: 15px; font-weight: 500;
+                border: 2px solid var(--border-color); border-radius: var(--radius-md);
+                margin-bottom: 16px; background: #fff; transition: all 0.2s; font-family: inherit; color: var(--text-dark);
+            }
+            input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-light); }
+
+            .btn {
+                width: 100%; padding: 16px; font-size: 16px; font-weight: 600;
+                border: none; border-radius: var(--radius-md); cursor: pointer;
+                transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+                margin-bottom: 12px; font-family: inherit; display: inline-block; text-align: center;
+            }
+            .btn:hover:not(:disabled) { transform: translateY(-2px); }
+            .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+            
+            .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); }
+            .btn-primary:hover:not(:disabled) { background: var(--primary-hover); box-shadow: 0 6px 16px rgba(79, 70, 229, 0.4); }
+            .btn-success { background: var(--success); color: white; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3); }
+            .btn-success:hover:not(:disabled) { background: #0f766e; }
+            .btn-danger { background: var(--error); color: white; }
+            .btn-secondary { background: #fff; color: var(--text-dark); border: 2px solid var(--border-color); }
+            .btn-secondary:hover:not(:disabled) { border-color: var(--text-muted); }
+            .btn-small { width: auto; padding: 10px 20px; font-size: 14px; }
+
+            .error-msg { color: var(--error); text-align: center; margin-top: 10px; min-height: 20px; font-size: 14px; font-weight: 500; }
+            
+            .lobby-actions { display: flex; gap: 12px; margin-bottom: 24px; flex-direction: column; }
+            @media (min-width: 768px) { .lobby-actions { flex-direction: row; } .lobby-actions .btn { flex: 1; } }
+
+            .active-room-panel { background: var(--primary-light); border: 1px solid rgba(79,70,229,0.2); border-radius: var(--radius-md); padding: 20px; text-align: center; margin-bottom: 24px; }
+            .active-room-panel div { color: var(--text-muted); font-size: 14px; font-weight: 500; }
+            .active-room-panel strong { color: var(--primary); font-size: 1.5em; display: block; margin: 8px 0; font-family: "Plus Jakarta Sans"; letter-spacing: 2px;}
+            .active-room-actions { display: flex; gap: 12px; justify-content: center; margin-top: 16px; }
+            
+            .room-code { text-align: center; font-size: 2.5em; font-weight: 800; color: var(--primary); letter-spacing: 8px; margin: 0 0 20px; padding: 24px; background: #fff; border-radius: var(--radius-md); border: 2px dashed var(--border-color); font-family: "Plus Jakarta Sans"; }
+            
+            .player-list { list-style: none; margin: 0 0 20px; background: #fff; border-radius: var(--radius-md); border: 1px solid var(--border-color); overflow: hidden; }
+            .player-item { display: flex; align-items: center; padding: 16px; border-bottom: 1px solid var(--border-color); gap: 16px; }
+            .player-item:last-child { border-bottom: none; }
+            .player-item img { width: 44px; height: 44px; border-radius: 50%; background: var(--bg-base); }
+            .player-name { flex: 1; font-weight: 600; font-size: 15px; color: var(--text-dark); }
+            
+            .player-badge { font-size: 12px; padding: 6px 12px; border-radius: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+            .badge-master { background: #fffbeb; color: #d97706; }
+            .badge-ready { background: var(--success-light); color: var(--success); }
+            .badge-not-ready { background: var(--error-light); color: var(--error); }
+            
+            .kick-btn { background: var(--error-light); color: var(--error); border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 700; transition: background 0.2s; }
+            .kick-btn:hover { background: #fda4af; }
+            
+            .settings-panel { background: #fff; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 24px; margin-bottom: 24px; }
+            .settings-panel h3 { margin-bottom: 20px; font-size: 18px; }
+            .setting-row { margin-bottom: 16px; }
+            .setting-row label { display: block; font-weight: 600; color: var(--text-dark); margin-bottom: 8px; font-size: 14px; }
+            
+            .timer-wrap { display: none; margin-bottom: 30px; }
+            .timer-meta { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+            .timer-bar { height: 10px; background: var(--border-color); border-radius: 5px; overflow: hidden; }
+            .timer-fill { width: 100%; height: 100%; background: var(--success); transition: width 0.2s linear; }
+            
+            .question-text { font-size: 1.4em; font-weight: 700; color: var(--text-dark); margin-bottom: 30px; text-align: center; line-height: 1.5; font-family: "Plus Jakarta Sans"; }
+            @media (min-width: 768px) { .question-text { font-size: 1.8em; margin-bottom: 40px; } }
+            
+            .options { display: grid; gap: 16px; grid-template-columns: 1fr; }
+            @media (min-width: 768px) { .options { grid-template-columns: 1fr 1fr; gap: 20px; } }
+            
             .option-btn {
-                padding: 15px 20px;
-                font-size: 16px;
-                border: 2px solid #ddd;
-                border-radius: 10px;
-                background: white;
-                cursor: pointer;
-                text-align: left;
-                transition: all 0.2s;
+                display: flex; align-items: center; gap: 16px;
+                padding: 16px 20px; font-size: 16px; font-weight: 600; color: var(--text-dark);
+                border: 2px solid var(--border-color); border-radius: var(--radius-md); background: #fff;
+                cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); text-align: left; line-height: 1.4;
             }
-            .option-btn:hover:not(.disabled) {
-                border-color: #667eea;
-                background: #f5f5ff;
-            }
-            .option-btn.correct {
-                background: #e8f5e9;
-                border-color: #4caf50;
-                color: #2e7d32;
-            }
-            .option-btn.wrong {
-                background: #ffebee;
-                border-color: #ef5350;
-                color: #c62828;
-            }
-            .option-btn.disabled {
-                cursor: default;
-                opacity: 0.7;
-            }
-            .fill-answer {
-                margin-bottom: 10px;
-            }
-            .quiz-feedback-pulse {
-                animation: correctPulse 0.45s ease;
-            }
-            .quiz-feedback-shake {
-                animation: wrongShake 0.35s ease;
-            }
-            .feedback {
-                text-align: center;
-                padding: 12px;
-                border-radius: 10px;
-                margin-top: 15px;
-                font-weight: 600;
-                min-height: 45px;
-            }
-            .feedback.correct {
-                background: #e8f5e9;
-                color: #2e7d32;
-            }
-            .feedback.wrong {
-                background: #ffebee;
-                color: #c62828;
-            }
-            .answer-queue {
-                text-align: center;
-                margin-top: 15px;
-                color: #888;
-                font-size: 14px;
-            }
-            .leaderboard-overlay {
-                display: none;
-                background: #111827;
-                color: white;
-                border-radius: 12px;
-                padding: 16px;
-                margin: 16px 0;
-                box-shadow: 0 10px 30px rgba(17, 24, 39, 0.25);
-            }
-            .leaderboard-overlay.show {
-                display: block;
-            }
-            .leaderboard-overlay h3 {
-                margin-bottom: 10px;
-                text-align: center;
-            }
-            .leaderboard-row {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-                padding: 8px 10px;
-                border-radius: 8px;
-                background: rgba(255, 255, 255, 0.08);
-                margin-bottom: 6px;
-            }
-            .leaderboard-row.me {
-                background: rgba(102, 126, 234, 0.55);
-            }
-            .confetti-layer {
-                pointer-events: none;
-                position: fixed;
-                inset: 0;
-                overflow: hidden;
-                z-index: 20;
-            }
-            .confetti-piece {
-                position: absolute;
-                top: -12px;
-                width: 8px;
-                height: 14px;
-                animation: confettiDrop 1s linear forwards;
-            }
-            /* Summary */
-            .summary-screen h2 {
-                margin-bottom: 10px;
-            }
-            .podium {
-                display: flex;
-                align-items: flex-end;
-                justify-content: center;
-                gap: 12px;
-                min-height: 180px;
-                margin: 16px 0 20px;
-            }
-            .podium-place {
-                flex: 1;
-                text-align: center;
-                max-width: 150px;
-            }
-            .podium-player {
-                font-weight: 700;
-                color: #333;
-                margin-bottom: 8px;
-                min-height: 38px;
-            }
-            .podium-bar {
-                height: 0;
-                border-radius: 8px 8px 0 0;
-                color: white;
-                display: flex;
-                align-items: flex-end;
-                justify-content: center;
-                padding: 10px 6px;
-                font-weight: 700;
-                transition: height 0.9s ease-out;
-            }
-            .podium-place.first .podium-bar {
-                background: #f9a825;
-            }
-            .podium-place.second .podium-bar {
-                background: #78909c;
-            }
-            .podium-place.third .podium-bar {
-                background: #8d6e63;
-            }
-            .winner-card {
-                text-align: center;
-                padding: 20px;
-                background: linear-gradient(135deg, #fff9c4 0%, #fff176 100%);
-                border-radius: 15px;
-                margin-bottom: 20px;
-            }
-            .winner-card .trophy {
-                font-size: 3em;
-            }
-            .winner-card .winner-name {
-                font-size: 1.5em;
-                font-weight: bold;
-                margin: 5px 0;
-            }
-            .ranking-table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 15px 0;
-            }
-            .ranking-table th,
-            .ranking-table td {
-                padding: 10px;
-                text-align: left;
-                border-bottom: 1px solid #eee;
-            }
-            .ranking-table th {
-                color: #888;
-                font-size: 13px;
-            }
-            .rank-number {
-                font-weight: bold;
-                font-size: 1.2em;
-                width: 30px;
-            }
-            .accuracy-bar {
-                display: inline-block;
-                height: 8px;
-                border-radius: 4px;
-                background: #4caf50;
-                margin-left: 8px;
-                vertical-align: middle;
-            }
-            .detail-toggle {
-                background: none;
-                border: none;
-                color: #667eea;
-                cursor: pointer;
-                font-size: 14px;
-            }
-            .detail-list {
-                display: none;
-                margin: 5px 0 10px 30px;
-                font-size: 14px;
-            }
-            .detail-list.show {
-                display: block;
-            }
-            .detail-item {
-                padding: 4px 0;
-            }
-            .detail-item.correct {
-                color: #2e7d32;
-            }
-            .detail-item.wrong {
-                color: #c62828;
-            }
-            /* Custom Questions */
-            .custom-q-form {
-                background: #f5f5ff;
-                padding: 15px;
-                border-radius: 10px;
-                margin: 10px 0;
-            }
-            .custom-q-form input,
-            .custom-q-form select {
-                width: 100%;
-                padding: 10px;
-                margin-bottom: 8px;
-                border: 2px solid #ddd;
-                border-radius: 8px;
-            }
-            /* Loading */
-            .loading {
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                padding: 40px;
-            }
-            .spinner {
-                width: 40px;
-                height: 40px;
-                border: 4px solid #e0e0e0;
-                border-top: 4px solid #667eea;
-                border-radius: 50%;
-                animation: spin 0.8s linear infinite;
-            }
-            @keyframes spin {
-                to {
-                    transform: rotate(360deg);
-                }
-            }
-            @keyframes correctPulse {
-                0% {
-                    transform: scale(1);
-                }
-                50% {
-                    transform: scale(1.03);
-                }
-                100% {
-                    transform: scale(1);
-                }
-            }
-            @keyframes wrongShake {
-                0%,
-                100% {
-                    transform: translateX(0);
-                }
-                25% {
-                    transform: translateX(-8px);
-                }
-                75% {
-                    transform: translateX(8px);
-                }
-            }
-            @keyframes confettiDrop {
-                to {
-                    transform: translateY(105vh) rotate(360deg);
-                    opacity: 0;
-                }
-            }
-            .hidden {
-                display: none !important;
-            }
+            .option-btn:hover:not(.disabled) { border-color: var(--primary); background: var(--primary-light); transform: translateY(-3px); box-shadow: var(--shadow-md); }
+            
+            .option-badge { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--bg-base); color: var(--text-muted); font-size: 15px; font-weight: 700; flex-shrink: 0; transition: all 0.2s; }
+            .option-btn:hover:not(.disabled) .option-badge { background: var(--primary); color: #fff; }
+            
+            .option-btn.correct { background: var(--success-light); border-color: var(--success); color: var(--success); }
+            .option-btn.correct .option-badge { background: var(--success); color: #fff; }
+            .option-btn.wrong { background: var(--error-light); border-color: var(--error); color: var(--error); opacity: 0.8; }
+            .option-btn.wrong .option-badge { background: var(--error); color: #fff; }
+            .option-btn.disabled { cursor: default; }
+            .option-text { flex: 1; }
+            
+            .feedback { text-align: center; padding: 16px; border-radius: var(--radius-md); margin-top: 24px; font-weight: 700; min-height: 56px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+            .feedback.correct { background: var(--success-light); color: var(--success); border: 1px solid rgba(13,148,136,0.3); }
+            .feedback.wrong { background: var(--error-light); color: var(--error); border: 1px solid rgba(225,29,72,0.3); }
+            
+            .leaderboard-overlay { display: none; background: #fff; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 24px; margin: 24px 0; box-shadow: var(--shadow-md); }
+            .leaderboard-overlay.show { display: block; }
+            .leaderboard-overlay h3 { text-align: center; margin-bottom: 20px; font-family: "Plus Jakarta Sans"; font-weight: 700; }
+            .leaderboard-row { display: flex; justify-content: space-between; padding: 14px 16px; background: var(--bg-base); border-radius: 12px; margin-bottom: 8px; font-weight: 600; font-size: 15px; align-items: center; }
+            .leaderboard-row.me { background: var(--primary-light); color: var(--primary); border: 1px solid rgba(79,70,229,0.3); }
+            
+            .podium { display: flex; align-items: flex-end; justify-content: center; gap: 16px; min-height: 220px; margin: 24px 0; }
+            .podium-place { flex: 1; text-align: center; max-width: 140px; }
+            .podium-player { font-weight: 700; color: var(--text-dark); margin-bottom: 12px; font-size: 15px; }
+            .podium-bar { height: 0; border-radius: 16px 16px 0 0; color: white; display: flex; align-items: flex-end; justify-content: center; padding: 16px 8px; font-weight: 800; font-size: 24px; transition: height 1s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: inset 0 -10px 20px rgba(0,0,0,0.15); }
+            .podium-place.first .podium-bar { background: linear-gradient(135deg, #f59e0b, #d97706); }
+            .podium-place.second .podium-bar { background: linear-gradient(135deg, #94a3b8, #64748b); }
+            .podium-place.third .podium-bar { background: linear-gradient(135deg, #d97706, #b45309); }
+            
+            .ranking-table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 24px 0; background: #fff; border-radius: var(--radius-md); border: 1px solid var(--border-color); overflow: hidden; }
+            .ranking-table th, .ranking-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 15px; }
+            .ranking-table th { background: var(--bg-base); color: var(--text-muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+            .ranking-table tr:last-child td { border-bottom: none; }
+            
+            .loading { display: flex; justify-content: center; align-items: center; padding: 80px; }
+            .spinner { width: 50px; height: 50px; border: 4px solid var(--border-color); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+            
+            @keyframes spin { to { transform: rotate(360deg); } }
+            @keyframes correctPulse { 0% { transform: scale(1); } 50% { transform: scale(1.03); } 100% { transform: scale(1); } }
+            @keyframes wrongShake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+            .quiz-feedback-pulse { animation: correctPulse 0.4s ease; }
+            .quiz-feedback-shake { animation: wrongShake 0.4s ease; }
+            
+            .hidden { display: none !important; }
+            
+            .answer-queue { text-align: center; margin-top: 20px; color: var(--text-muted); font-size: 15px; font-weight: 500; }
+            .winner-card { text-align: center; padding: 30px; background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-radius: var(--radius-md); margin-bottom: 24px; border: 1px solid #fde68a; }
+            .winner-card .trophy { font-size: 4em; margin-bottom: 10px; display: inline-block; }
+            .winner-card .winner-name { font-size: 1.8em; font-weight: 800; margin: 5px 0; color: #d97706; font-family: "Plus Jakarta Sans"; }
         </style>
     </head>
     <body>
@@ -647,41 +269,22 @@
                 <!-- Lobby Screen -->
                 <div id="lobbyScreen" class="screen">
                     <h2>🎯 Lobby</h2>
-                    <div class="lobby-actions">
-                        <button
-                            class="btn btn-primary"
-                            onclick="showCreateRoom()"
-                        >
-                            Create Room
-                        </button>
-                        <button
-                            class="btn btn-secondary"
-                            onclick="showJoinRoom()"
-                        >
-                            Join Room
-                        </button>
-                    </div>
-
-                    <div id="activeRoomPanel" class="active-room-panel hidden">
-                        <div>
-                            Active room: <strong id="activeRoomCode">------</strong>
+                    <div class="screen-grid">
+                        <div class="lobby-col-left">
+                            <div class="lobby-actions">
+                                <button class="btn btn-primary" onclick="showCreateRoom()">Create Room</button>
+                                <button class="btn btn-secondary" onclick="showJoinRoom()">Join Room</button>
+                            </div>
+                            <div id="activeRoomPanel" class="active-room-panel hidden">
+                                <div>Active room:</div>
+                                <strong id="activeRoomCode">------</strong>
+                                <div class="active-room-actions">
+                                    <button class="btn btn-success btn-small" onclick="returnToActiveRoom()">Return to Room</button>
+                                    <button class="btn btn-danger btn-small hidden" id="activeRoomDeleteBtn" onclick="deleteSavedRoom()">Delete</button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="active-room-actions">
-                            <button
-                                class="btn btn-success btn-small"
-                                onclick="returnToActiveRoom()"
-                            >
-                                Return to Room
-                            </button>
-                            <button
-                                class="btn btn-danger btn-small hidden"
-                                id="activeRoomDeleteBtn"
-                                onclick="deleteSavedRoom()"
-                            >
-                                Delete Room
-                            </button>
-                        </div>
-                    </div>
+                        <div class="lobby-col-right">
 
                     <!-- Join by code -->
                     <div id="joinForm" class="hidden">
@@ -800,57 +403,39 @@
                             Create Room
                         </button>
                     </div>
-
+                        </div>
+                    </div>
                     <div id="lobbyError" class="error-msg"></div>
                 </div>
 
                 <!-- Room Screen -->
                 <div id="roomScreen" class="screen">
                     <h2>🏠 Room</h2>
-                    <div class="room-code" id="roomCodeDisplay">------</div>
-                    <p
-                        style="
-                            text-align: center;
-                            color: #888;
-                            margin-bottom: 10px;
-                        "
-                    >
-                        Share this code with friends to join
-                    </p>
-
-                    <ul class="player-list" id="playerList"></ul>
-
-                    <!-- Room Settings Display -->
-                    <div class="settings-panel" id="roomSettingsDisplay">
-                        <h3>Settings</h3>
-                        <div id="roomSettingsInfo"></div>
+                    <div class="screen-grid">
+                        <div class="room-col-left">
+                            <div class="room-code" id="roomCodeDisplay">------</div>
+                            <p style="text-align: center; color: var(--text-muted); margin-bottom: 20px; font-weight: 500;">
+                                Share this code with friends to join
+                            </p>
+                            <div class="settings-panel" id="roomSettingsDisplay">
+                                <h3>Settings</h3>
+                                <div id="roomSettingsInfo"></div>
+                            </div>
+                            <div style="display: flex; gap: 12px; flex-direction: column;">
+                                <button class="btn btn-secondary" onclick="backToLobby()">Back to Lobby</button>
+                                <button class="btn btn-danger" onclick="leaveRoom()" style="background: var(--error-light); color: var(--error);">Leave Room</button>
+                            </div>
+                        </div>
+                        <div class="room-col-right">
+                            <h3 style="margin-bottom: 15px;">Players</h3>
+                            <ul class="player-list" id="playerList"></ul>
+                            <div style="display: flex; gap: 12px;">
+                                <button class="btn btn-primary" id="readyBtn" onclick="toggleReady()">Ready</button>
+                                <button class="btn btn-success hidden" id="startBtn" onclick="startGame()">Start Game</button>
+                            </div>
+                            <div id="roomError" class="error-msg"></div>
+                        </div>
                     </div>
-
-                    <div style="display: flex; gap: 10px">
-                        <button
-                            class="btn btn-primary"
-                            id="readyBtn"
-                            onclick="toggleReady()"
-                        >
-                            Ready
-                        </button>
-                        <button
-                            class="btn btn-success hidden"
-                            id="startBtn"
-                            onclick="startGame()"
-                        >
-                            Start Game
-                        </button>
-                    </div>
-                    <div style="display: flex; gap: 10px; margin-top: 5px">
-                        <button class="btn btn-secondary" onclick="backToLobby()">
-                            Lobby
-                        </button>
-                        <button class="btn btn-secondary" onclick="leaveRoom()">
-                            Leave Room
-                        </button>
-                    </div>
-                    <div id="roomError" class="error-msg"></div>
                 </div>
 
                 <!-- Loading -->
@@ -880,26 +465,26 @@
                 <div id="summaryScreen" class="screen summary-screen">
                     <h2>📊 Quiz Summary</h2>
                     <div id="winnerCard"></div>
-                    <div id="podiumContainer"></div>
-                    <table class="ranking-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Player</th>
-                                <th>Score</th>
-                                <th>Accuracy</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rankingBody"></tbody>
-                    </table>
-                    <div id="detailSection"></div>
-                    <button
-                        class="btn btn-primary"
-                        onclick="backToLobby()"
-                        style="margin-top: 15px"
-                    >
-                        Back to Lobby
-                    </button>
+                    <div class="screen-grid" style="align-items: stretch;">
+                        <div class="summary-col-left">
+                            <div id="podiumContainer"></div>
+                        </div>
+                        <div class="summary-col-right">
+                            <table class="ranking-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Player</th>
+                                        <th>Score</th>
+                                        <th>Accuracy</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rankingBody"></tbody>
+                            </table>
+                            <div id="detailSection"></div>
+                            <button class="btn btn-primary" onclick="backToLobby()" style="margin-top: 15px">Back to Lobby</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Solo Result (for single-player mode) -->
@@ -2266,10 +1851,13 @@
                 }
 
                 const options = currentQuestion.options || [];
-                options.forEach((option) => {
+                const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+                options.forEach((option, idx) => {
                     const btn = document.createElement("button");
                     btn.className = "option-btn";
-                    btn.textContent = option;
+                    btn.dataset.answer = option;
+                    const letter = letters[idx] || '';
+                    btn.innerHTML = `<span class="option-badge">${letter}</span><span class="option-text">${escapeHtml(option)}</span>`;
                     btn.onclick = () => selectAnswer(option, btn);
                     container.appendChild(btn);
                 });
@@ -2361,7 +1949,9 @@
                     ) {
                         const feedback = document.getElementById("feedback");
                         buttons.forEach((b) => {
-                            if (b.textContent === data.correctAnswer) {
+                            // Check dataset.answer if it's an option button, otherwise fallback to textContent (for fill in blank)
+                            const val = b.dataset.answer || b.textContent;
+                            if (val === data.correctAnswer) {
                                 b.classList.add("correct");
                             } else if (b === btn && !data.isCorrect) {
                                 b.classList.add("wrong");
