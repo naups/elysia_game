@@ -82,6 +82,29 @@
                 height: 100%;
                 transition: width 0.3s ease;
             }
+            .timer-wrap {
+                display: none;
+                margin-bottom: 16px;
+            }
+            .timer-meta {
+                display: flex;
+                justify-content: space-between;
+                color: #666;
+                font-size: 13px;
+                margin-bottom: 6px;
+            }
+            .timer-bar {
+                height: 10px;
+                background: #f1f1f1;
+                border-radius: 999px;
+                overflow: hidden;
+            }
+            .timer-fill {
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, #2e7d32, #f9a825, #c62828);
+                transition: width 0.2s linear;
+            }
             .content {
                 padding: 30px;
             }
@@ -181,6 +204,13 @@
             .active-room-panel strong {
                 color: #667eea;
                 letter-spacing: 2px;
+            }
+            .active-room-actions {
+                display: flex;
+                gap: 8px;
+                justify-content: center;
+                flex-wrap: wrap;
+                margin-top: 10px;
             }
             /* Room */
             .room-code {
@@ -313,6 +343,15 @@
                 cursor: default;
                 opacity: 0.7;
             }
+            .fill-answer {
+                margin-bottom: 10px;
+            }
+            .quiz-feedback-pulse {
+                animation: correctPulse 0.45s ease;
+            }
+            .quiz-feedback-shake {
+                animation: wrongShake 0.35s ease;
+            }
             .feedback {
                 text-align: center;
                 padding: 12px;
@@ -335,9 +374,91 @@
                 color: #888;
                 font-size: 14px;
             }
+            .leaderboard-overlay {
+                display: none;
+                background: #111827;
+                color: white;
+                border-radius: 12px;
+                padding: 16px;
+                margin: 16px 0;
+                box-shadow: 0 10px 30px rgba(17, 24, 39, 0.25);
+            }
+            .leaderboard-overlay.show {
+                display: block;
+            }
+            .leaderboard-overlay h3 {
+                margin-bottom: 10px;
+                text-align: center;
+            }
+            .leaderboard-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                padding: 8px 10px;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.08);
+                margin-bottom: 6px;
+            }
+            .leaderboard-row.me {
+                background: rgba(102, 126, 234, 0.55);
+            }
+            .confetti-layer {
+                pointer-events: none;
+                position: fixed;
+                inset: 0;
+                overflow: hidden;
+                z-index: 20;
+            }
+            .confetti-piece {
+                position: absolute;
+                top: -12px;
+                width: 8px;
+                height: 14px;
+                animation: confettiDrop 1s linear forwards;
+            }
             /* Summary */
             .summary-screen h2 {
                 margin-bottom: 10px;
+            }
+            .podium {
+                display: flex;
+                align-items: flex-end;
+                justify-content: center;
+                gap: 12px;
+                min-height: 180px;
+                margin: 16px 0 20px;
+            }
+            .podium-place {
+                flex: 1;
+                text-align: center;
+                max-width: 150px;
+            }
+            .podium-player {
+                font-weight: 700;
+                color: #333;
+                margin-bottom: 8px;
+                min-height: 38px;
+            }
+            .podium-bar {
+                height: 0;
+                border-radius: 8px 8px 0 0;
+                color: white;
+                display: flex;
+                align-items: flex-end;
+                justify-content: center;
+                padding: 10px 6px;
+                font-weight: 700;
+                transition: height 0.9s ease-out;
+            }
+            .podium-place.first .podium-bar {
+                background: #f9a825;
+            }
+            .podium-place.second .podium-bar {
+                background: #78909c;
+            }
+            .podium-place.third .podium-bar {
+                background: #8d6e63;
             }
             .winner-card {
                 text-align: center;
@@ -413,7 +534,8 @@
                 border-radius: 10px;
                 margin: 10px 0;
             }
-            .custom-q-form input {
+            .custom-q-form input,
+            .custom-q-form select {
                 width: 100%;
                 padding: 10px;
                 margin-bottom: 8px;
@@ -438,6 +560,35 @@
             @keyframes spin {
                 to {
                     transform: rotate(360deg);
+                }
+            }
+            @keyframes correctPulse {
+                0% {
+                    transform: scale(1);
+                }
+                50% {
+                    transform: scale(1.03);
+                }
+                100% {
+                    transform: scale(1);
+                }
+            }
+            @keyframes wrongShake {
+                0%,
+                100% {
+                    transform: translateX(0);
+                }
+                25% {
+                    transform: translateX(-8px);
+                }
+                75% {
+                    transform: translateX(8px);
+                }
+            }
+            @keyframes confettiDrop {
+                to {
+                    transform: translateY(105vh) rotate(360deg);
+                    opacity: 0;
                 }
             }
             .hidden {
@@ -515,13 +666,21 @@
                         <div>
                             Active room: <strong id="activeRoomCode">------</strong>
                         </div>
-                        <button
-                            class="btn btn-success btn-small"
-                            onclick="returnToActiveRoom()"
-                            style="margin-top: 10px"
-                        >
-                            Return to Room
-                        </button>
+                        <div class="active-room-actions">
+                            <button
+                                class="btn btn-success btn-small"
+                                onclick="returnToActiveRoom()"
+                            >
+                                Return to Room
+                            </button>
+                            <button
+                                class="btn btn-danger btn-small hidden"
+                                id="activeRoomDeleteBtn"
+                                onclick="deleteSavedRoom()"
+                            >
+                                Delete Room
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Join by code -->
@@ -570,6 +729,26 @@
                                     value="10"
                                     min="0"
                                     max="60"
+                                />
+                            </div>
+                            <div class="setting-row">
+                                <label>Time per Question</label>
+                                <input
+                                    type="number"
+                                    id="setTimePerQuestion"
+                                    value="0"
+                                    min="0"
+                                    max="300"
+                                />
+                            </div>
+                            <div class="setting-row">
+                                <label>Idle Timeout</label>
+                                <input
+                                    type="number"
+                                    id="setRoomIdleTimeout"
+                                    value="1800"
+                                    min="0"
+                                    max="86400"
                                 />
                             </div>
                             <div class="setting-row">
@@ -681,9 +860,19 @@
 
                 <!-- Quiz Screen -->
                 <div id="quizScreen" class="screen">
+                    <div class="timer-wrap" id="questionTimer">
+                        <div class="timer-meta">
+                            <span>Time</span>
+                            <span id="timerText">0s</span>
+                        </div>
+                        <div class="timer-bar">
+                            <div class="timer-fill" id="timerFill"></div>
+                        </div>
+                    </div>
                     <div class="question-text" id="questionText"></div>
                     <div class="options" id="optionsContainer"></div>
                     <div class="feedback" id="feedback"></div>
+                    <div class="leaderboard-overlay" id="leaderboardOverlay"></div>
                     <div class="answer-queue" id="answerQueue"></div>
                 </div>
 
@@ -691,6 +880,7 @@
                 <div id="summaryScreen" class="screen summary-screen">
                     <h2>📊 Quiz Summary</h2>
                     <div id="winnerCard"></div>
+                    <div id="podiumContainer"></div>
                     <table class="ranking-table">
                         <thead>
                             <tr>
@@ -739,6 +929,7 @@
                 </div>
             </div>
         </div>
+        <div class="confetti-layer" id="confettiLayer"></div>
 
         <script>
             // ═══════════════════════════════════════════════════════════
@@ -760,6 +951,13 @@
             let roomPollingInterval = null;
             let transitionCountdownTimer = null;
             let waitingRecoveryTimer = null;
+            let questionTimerInterval = null;
+            let timePerQuestionSeconds = 0;
+            let currentQuestionStartedAt = null;
+            let answerSubmitted = false;
+            let questionInputLocked = false;
+            let deletingRoomCode = null;
+            const locallyDeletedRooms = new Set();
 
             // ═══════════════════════════════════════════════════════════
             //  SCREEN MANAGEMENT
@@ -854,8 +1052,11 @@
 
             function clearRoomReference() {
                 clearWaitingRecoveryTimer();
+                stopQuestionTimer();
+                hideLeaderboardOverlay();
                 currentRoomCode = null;
                 roomMasterId = null;
+                isMaster = false;
                 localStorage.removeItem("roomCode");
                 setRoomUrl(null);
                 updateActiveRoomPanel();
@@ -869,6 +1070,14 @@
                 if (code) {
                     document.getElementById("activeRoomCode").textContent =
                         code;
+                }
+                const deleteBtn = document.getElementById("activeRoomDeleteBtn");
+                if (deleteBtn) {
+                    const canDelete =
+                        !!code &&
+                        !!currentUser &&
+                        (isMaster || roomMasterId === currentUser.id);
+                    deleteBtn.classList.toggle("hidden", !canDelete);
                 }
             }
 
@@ -1129,6 +1338,29 @@
                             showSummary(data.summary);
                         }
                         break;
+                    case "room_deleted": {
+                        const deletedCode = data.roomCode?.toUpperCase();
+                        const savedCode = getSavedRoomCode();
+                        if (
+                            deletedCode &&
+                            (deletedCode === currentRoomCode ||
+                                deletedCode === savedCode)
+                        ) {
+                            const isLocalDelete =
+                                deletingRoomCode === deletedCode ||
+                                locallyDeletedRooms.has(deletedCode);
+                            clearRoomReference();
+                            enterLobby();
+                            if (!isLocalDelete) {
+                                alert(
+                                    data.reason === "idle_timeout"
+                                        ? "Room expired because it was idle."
+                                        : "Room was deleted.",
+                                );
+                            }
+                        }
+                        break;
+                    }
                     case "error":
                         console.error("WS error:", data.message);
                         break;
@@ -1141,6 +1373,8 @@
 
             function enterLobby() {
                 clearWaitingRecoveryTimer();
+                stopQuestionTimer();
+                hideLeaderboardOverlay();
                 document.getElementById("userAvatar").src =
                     currentUser.avatar ||
                     `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(currentUser.username)}`;
@@ -1179,6 +1413,7 @@
                 const idx = customQuestions.length;
                 customQuestions.push({
                     text: "",
+                    type: "multiple_choice",
                     options: ["", "", "", ""],
                     correct_answer: "",
                 });
@@ -1190,6 +1425,11 @@
                 div.innerHTML = `
                     <strong>Q${idx + 1}</strong>
                     <input type="text" placeholder="Question text" onchange="customQuestions[${idx}].text=this.value" />
+                    <select onchange="setCustomQuestionType(${idx}, this.value)">
+                        <option value="multiple_choice">Multiple Choice</option>
+                        <option value="true_false">True / False</option>
+                        <option value="fill_blank">Fill in Blank</option>
+                    </select>
                     <input type="text" placeholder="Option A" onchange="customQuestions[${idx}].options[0]=this.value" />
                     <input type="text" placeholder="Option B" onchange="customQuestions[${idx}].options[1]=this.value" />
                     <input type="text" placeholder="Option C" onchange="customQuestions[${idx}].options[2]=this.value" />
@@ -1197,6 +1437,20 @@
                     <input type="text" placeholder="Correct Answer" onchange="customQuestions[${idx}].correct_answer=this.value" />
                 `;
                 list.appendChild(div);
+            }
+
+            function setCustomQuestionType(index, type) {
+                const question = customQuestions[index];
+                if (!question) return;
+                question.type = type;
+                if (type === "true_false") {
+                    question.options = ["True", "False"];
+                    question.correct_answer = "True";
+                } else if (type === "fill_blank") {
+                    question.options = [];
+                } else if (!Array.isArray(question.options) || question.options.length < 4) {
+                    question.options = ["", "", "", ""];
+                }
             }
 
             // ═══════════════════════════════════════════════════════════
@@ -1207,6 +1461,14 @@
                 const errEl = document.getElementById("lobbyError");
                 const delaySeconds = parseInt(
                     document.getElementById("setQuestionDelay").value,
+                    10,
+                );
+                const timeLimitSeconds = parseInt(
+                    document.getElementById("setTimePerQuestion").value,
+                    10,
+                );
+                const idleTimeoutSeconds = parseInt(
+                    document.getElementById("setRoomIdleTimeout").value,
                     10,
                 );
                 const settings = {
@@ -1226,6 +1488,12 @@
                     questionDelaySeconds: Number.isFinite(delaySeconds)
                         ? delaySeconds
                         : 10,
+                    timePerQuestion: Number.isFinite(timeLimitSeconds)
+                        ? timeLimitSeconds
+                        : 0,
+                    roomIdleTimeoutSeconds: Number.isFinite(idleTimeoutSeconds)
+                        ? idleTimeoutSeconds
+                        : 1800,
                     customQuestions:
                         document.getElementById("setQuestionSource").value ===
                         "custom"
@@ -1359,6 +1627,9 @@
                                 questionNumber: data.questionNumber,
                                 totalQuestions: data.totalQuestions,
                                 resultMode: data.resultMode,
+                                timePerQuestionSeconds:
+                                    data.timePerQuestionSeconds,
+                                questionStartedAt: data.questionStartedAt,
                             });
                         }
                     }
@@ -1444,12 +1715,17 @@
                             questionNumber: data.gameState.questionNumber,
                             totalQuestions: data.gameState.totalQuestions,
                             resultMode: data.gameState.resultMode,
+                            timePerQuestionSeconds:
+                                data.gameState.timePerQuestionSeconds,
+                            questionStartedAt:
+                                data.gameState.questionStartedAt,
                         });
                         if (data.gameState.alreadyAnswered) {
                             setTimeout(() => {
-                                document
-                                    .querySelectorAll(".option-btn")
-                                    .forEach((b) => b.classList.add("disabled"));
+                                answerSubmitted = true;
+                                stopQuestionTimer();
+                                questionInputLocked = true;
+                                setAnswerControlsDisabled(true);
                                 if (data.gameState.transition) {
                                     startTransitionCountdown(
                                         data.gameState.transition,
@@ -1486,6 +1762,39 @@
                 await restoreRoomFromCode(code);
             }
 
+            async function deleteSavedRoom() {
+                const code = getSavedRoomCode();
+                if (!code) return;
+
+                const errEl = document.getElementById("lobbyError");
+                errEl.textContent = "";
+                if (!confirm(`Delete room ${code}?`)) return;
+
+                deletingRoomCode = code;
+                locallyDeletedRooms.add(code);
+                try {
+                    const data = await api("DELETE", `/api/rooms/${code}`);
+                    if (data.success) {
+                        clearRoomReference();
+                        enterLobby();
+                        return;
+                    }
+
+                    if (data.message === "Room not found") {
+                        clearRoomReference();
+                        enterLobby();
+                        return;
+                    }
+
+                    errEl.textContent = data.message || "Failed to delete room";
+                } catch (_) {
+                    errEl.textContent = "Failed to delete room";
+                } finally {
+                    deletingRoomCode = null;
+                    setTimeout(() => locallyDeletedRooms.delete(code), 5000);
+                }
+            }
+
             // ═══════════════════════════════════════════════════════════
             //  ROOM UI
             // ═══════════════════════════════════════════════════════════
@@ -1509,6 +1818,8 @@
                 settingsText.textContent =
                     `Max Players: ${s.max_players} | Questions: ${s.question_count}\n` +
                     `Question Delay: ${s.question_delay_seconds ?? 10}s\n` +
+                    `Time per Question: ${s.time_per_question_seconds || 0}s\n` +
+                    `Idle Timeout: ${s.room_idle_timeout_seconds ?? 1800}s\n` +
                     `Source: ${s.question_source} | Mode: ${
                         s.question_mode === "same_for_all"
                             ? "Same for All"
@@ -1617,10 +1928,16 @@
 
             function handleNextQuestion(data) {
                 stopTransitionCountdown();
+                stopQuestionTimer();
+                hideLeaderboardOverlay();
                 clearWaitingRecoveryTimer();
                 questionOrder = data.questionNumber;
                 totalQuestions = data.totalQuestions;
                 resultMode = data.resultMode;
+                timePerQuestionSeconds = data.timePerQuestionSeconds || 0;
+                currentQuestionStartedAt = data.questionStartedAt || null;
+                answerSubmitted = false;
+                questionInputLocked = false;
                 updateProgress();
 
                 // Get question — could be same for all or per-player
@@ -1668,12 +1985,15 @@
                 if (waitingRecoveryTimer) return;
 
                 const queue = document.getElementById("answerQueue");
+                const isWaitingText = (value) =>
+                    value === "Waiting for other players..." ||
+                    value === "Time is up. Waiting for other players...";
                 if (
                     !currentRoomCode ||
                     !currentUser ||
                     document.getElementById("quizScreen").style.display ===
                         "none" ||
-                    queue?.textContent !== "Waiting for other players..."
+                    !isWaitingText(queue?.textContent)
                 ) {
                     return;
                 }
@@ -1688,8 +2008,7 @@
                         currentRoomCode !== roomCode ||
                         document.getElementById("quizScreen").style.display ===
                             "none" ||
-                        currentQueue?.textContent !==
-                            "Waiting for other players..."
+                        !isWaitingText(currentQueue?.textContent)
                     ) {
                         return;
                     }
@@ -1722,6 +2041,10 @@
                                 questionNumber: data.gameState.questionNumber,
                                 totalQuestions: data.gameState.totalQuestions,
                                 resultMode: data.gameState.resultMode,
+                                timePerQuestionSeconds:
+                                    data.gameState.timePerQuestionSeconds,
+                                questionStartedAt:
+                                    data.gameState.questionStartedAt,
                             });
                             return;
                         }
@@ -1744,6 +2067,172 @@
                 }, 10000);
             }
 
+            function setAnswerControlsDisabled(disabled) {
+                document
+                    .querySelectorAll(".option-btn, .submit-answer-btn")
+                    .forEach((button) => {
+                        button.classList.toggle("disabled", disabled);
+                        button.disabled = disabled;
+                    });
+                const fillInput = document.getElementById("fillAnswerInput");
+                if (fillInput) fillInput.disabled = disabled;
+            }
+
+            function hasQuestionTimerExpired() {
+                if (!timePerQuestionSeconds || !currentQuestionStartedAt)
+                    return false;
+                const started = Date.parse(currentQuestionStartedAt);
+                if (!Number.isFinite(started)) return false;
+                return Date.now() >= started + timePerQuestionSeconds * 1000;
+            }
+
+            function lockAnswerInput(message) {
+                questionInputLocked = true;
+                answerSubmitted = true;
+                stopQuestionTimer();
+                setAnswerControlsDisabled(true);
+                if (message) {
+                    document.getElementById("answerQueue").textContent =
+                        message;
+                }
+            }
+
+            function stopQuestionTimer() {
+                if (questionTimerInterval) {
+                    clearInterval(questionTimerInterval);
+                    questionTimerInterval = null;
+                }
+                const timer = document.getElementById("questionTimer");
+                if (timer) timer.style.display = "none";
+            }
+
+            function startQuestionTimer() {
+                stopQuestionTimer();
+                if (!timePerQuestionSeconds || !currentQuestionStartedAt) return;
+
+                const timer = document.getElementById("questionTimer");
+                const fill = document.getElementById("timerFill");
+                const text = document.getElementById("timerText");
+                const started = Date.parse(currentQuestionStartedAt);
+                if (!Number.isFinite(started)) return;
+
+                const endTime = started + timePerQuestionSeconds * 1000;
+                timer.style.display = "block";
+
+                const render = () => {
+                    const remainingMs = Math.max(0, endTime - Date.now());
+                    const pct = Math.max(
+                        0,
+                        Math.min(100, (remainingMs / (timePerQuestionSeconds * 1000)) * 100),
+                    );
+                    fill.style.width = `${pct}%`;
+                    text.textContent = `${Math.ceil(remainingMs / 1000)}s`;
+                    if (remainingMs <= 0) {
+                        handleQuestionTimeExpired();
+                    }
+                };
+
+                render();
+                questionTimerInterval = setInterval(render, 250);
+            }
+
+            function handleQuestionTimeExpired() {
+                if (answerSubmitted || !currentRoomCode || !currentQuestion)
+                    return;
+                const queue = document.getElementById("answerQueue");
+                lockAnswerInput("Time is up. Waiting for other players...");
+                startWaitingRecoveryTimer();
+            }
+
+            function hideLeaderboardOverlay() {
+                const overlay = document.getElementById("leaderboardOverlay");
+                if (!overlay) return;
+                overlay.classList.remove("show");
+                overlay.innerHTML = "";
+            }
+
+            async function showLeaderboardOverlay(transition) {
+                if (!currentRoomCode) return;
+                try {
+                    const data = await api(
+                        "GET",
+                        `/api/rooms/${currentRoomCode}/leaderboard`,
+                    );
+                    if (!data.success) return;
+                    const overlay = document.getElementById("leaderboardOverlay");
+                    const rows = data.leaderboard.slice(0, 5);
+                    overlay.innerHTML = `
+                        <h3>Leaderboard</h3>
+                        ${rows
+                            .map(
+                                (player) => `
+                                    <div class="leaderboard-row ${player.isCurrentUser ? "me" : ""}">
+                                        <span>#${player.rank} ${escapeHtml(player.username)}</span>
+                                        <strong>${player.score} pts${player.streak ? ` | x${player.streak}` : ""}</strong>
+                                    </div>
+                                `,
+                            )
+                            .join("")}
+                    `;
+                    overlay.classList.add("show");
+                    if (transition?.gameOver) {
+                        document.getElementById("answerQueue").textContent =
+                            "Final results are loading...";
+                    }
+                } catch (error) {
+                    console.error("Leaderboard error:", error);
+                }
+            }
+
+            function playFeedbackTone(isCorrect) {
+                const AudioContext =
+                    window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                try {
+                    const ctx = new AudioContext();
+                    const oscillator = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    oscillator.frequency.value = isCorrect ? 660 : 220;
+                    oscillator.type = "sine";
+                    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(
+                        0.001,
+                        ctx.currentTime + 0.18,
+                    );
+                    oscillator.connect(gain);
+                    gain.connect(ctx.destination);
+                    oscillator.start();
+                    oscillator.stop(ctx.currentTime + 0.18);
+                } catch (_) {}
+            }
+
+            function showConfetti() {
+                const layer = document.getElementById("confettiLayer");
+                if (!layer) return;
+                layer.innerHTML = "";
+                const colors = ["#4caf50", "#f9a825", "#ef5350", "#667eea"];
+                for (let i = 0; i < 28; i++) {
+                    const piece = document.createElement("span");
+                    piece.className = "confetti-piece";
+                    piece.style.left = `${Math.random() * 100}%`;
+                    piece.style.background = colors[i % colors.length];
+                    piece.style.animationDelay = `${Math.random() * 0.2}s`;
+                    layer.appendChild(piece);
+                }
+                setTimeout(() => {
+                    layer.innerHTML = "";
+                }, 1300);
+            }
+
+            function applyFeedbackMotion(isCorrect) {
+                const quiz = document.getElementById("quizScreen");
+                quiz.classList.remove("quiz-feedback-pulse", "quiz-feedback-shake");
+                void quiz.offsetWidth;
+                quiz.classList.add(
+                    isCorrect ? "quiz-feedback-pulse" : "quiz-feedback-shake",
+                );
+            }
+
             function displayQuestion() {
                 if (!currentQuestion) return;
                 document.getElementById("questionText").textContent =
@@ -1754,13 +2243,37 @@
                 document.getElementById("feedback").textContent = "";
                 document.getElementById("answerQueue").textContent = "";
 
-                currentQuestion.options.forEach((option) => {
+                if (currentQuestion.type === "fill_blank") {
+                    const input = document.createElement("input");
+                    input.type = "text";
+                    input.className = "fill-answer";
+                    input.id = "fillAnswerInput";
+                    input.placeholder = "Type your answer";
+                    input.addEventListener("keydown", (event) => {
+                        if (event.key === "Enter") {
+                            selectAnswer(input.value, null);
+                        }
+                    });
+                    const submit = document.createElement("button");
+                    submit.className = "btn btn-primary submit-answer-btn";
+                    submit.textContent = "Submit Answer";
+                    submit.onclick = () => selectAnswer(input.value, submit);
+                    container.appendChild(input);
+                    container.appendChild(submit);
+                    input.focus();
+                    startQuestionTimer();
+                    return;
+                }
+
+                const options = currentQuestion.options || [];
+                options.forEach((option) => {
                     const btn = document.createElement("button");
                     btn.className = "option-btn";
                     btn.textContent = option;
                     btn.onclick = () => selectAnswer(option, btn);
                     container.appendChild(btn);
                 });
+                startQuestionTimer();
             }
 
             function stopTransitionCountdown() {
@@ -1772,6 +2285,7 @@
 
             function startTransitionCountdown(data) {
                 stopTransitionCountdown();
+                stopQuestionTimer();
                 clearWaitingRecoveryTimer();
                 const queue = document.getElementById("answerQueue");
                 if (!queue) return;
@@ -1794,12 +2308,24 @@
                 };
 
                 render();
+                showLeaderboardOverlay(data);
                 transitionCountdownTimer = setInterval(render, 250);
             }
 
-            async function selectAnswer(answer, btn) {
-                const buttons = document.querySelectorAll(".option-btn");
-                buttons.forEach((b) => b.classList.add("disabled"));
+            async function selectAnswer(answer, btn, isAutomatic = false) {
+                if (answerSubmitted || questionInputLocked) return;
+                if (hasQuestionTimerExpired()) {
+                    lockAnswerInput("Time is up. Waiting for other players...");
+                    startWaitingRecoveryTimer();
+                    return;
+                }
+                answerSubmitted = true;
+                questionInputLocked = true;
+                stopQuestionTimer();
+                const buttons = document.querySelectorAll(
+                    ".option-btn, .submit-answer-btn",
+                );
+                setAnswerControlsDisabled(true);
 
                 try {
                     const data = await api(
@@ -1813,8 +2339,18 @@
                     );
 
                     if (!data.success) {
+                        if (data.message === "Question time has ended") {
+                            lockAnswerInput(
+                                "Time is up. Waiting for other players...",
+                            );
+                            startWaitingRecoveryTimer();
+                            return;
+                        }
                         document.getElementById("answerQueue").textContent =
-                            "Error submitting answer";
+                            data.message || "Error submitting answer";
+                        answerSubmitted = false;
+                        questionInputLocked = false;
+                        setAnswerControlsDisabled(false);
                         return;
                     }
 
@@ -1838,6 +2374,22 @@
                             feedback.className = "feedback wrong";
                             feedback.textContent = `❌ Wrong! Answer: ${data.correctAnswer}`;
                         }
+                        const points =
+                            data.pointsAwarded ?? (data.isCorrect ? 10 : 0);
+                        if (data.isCorrect) {
+                            feedback.textContent =
+                                `Correct! +${points} points` +
+                                (data.streakBonus
+                                    ? ` | Streak x${data.streak} +${data.streakBonus}`
+                                    : "");
+                            showConfetti();
+                        } else {
+                            feedback.textContent = isAutomatic
+                                ? `Time is up. Answer: ${data.correctAnswer}`
+                                : `Wrong! Answer: ${data.correctAnswer}`;
+                        }
+                        playFeedbackTone(data.isCorrect);
+                        applyFeedbackMotion(data.isCorrect);
                         document.getElementById("headerScore").textContent =
                             `Score: ${data.score}`;
                     }
@@ -1900,6 +2452,9 @@
                     feedback.className = "feedback wrong";
                     feedback.textContent = `❌ Wrong! Answer: ${data.correctAnswer}`;
                 }
+                playFeedbackTone(data.isCorrect);
+                applyFeedbackMotion(data.isCorrect);
+                if (data.isCorrect) showConfetti();
                 document.getElementById("headerScore").textContent =
                     `Score: ${data.score}`;
             }
@@ -1908,10 +2463,49 @@
             //  SUMMARY
             // ═══════════════════════════════════════════════════════════
 
+            function renderPodium(summary) {
+                const container = document.getElementById("podiumContainer");
+                const top = summary.slice(0, 3);
+                if (top.length === 0) {
+                    container.innerHTML = "";
+                    return;
+                }
+
+                const order = [top[1], top[0], top[2]].filter(Boolean);
+                const placeClass = { 1: "first", 2: "second", 3: "third" };
+                const placeLabel = { 1: "1st", 2: "2nd", 3: "3rd" };
+                const heights = { 1: 130, 2: 95, 3: 70 };
+
+                container.innerHTML = `
+                    <div class="podium">
+                        ${order
+                            .map(
+                                (player) => `
+                                    <div class="podium-place ${placeClass[player.rank]}">
+                                        <div class="podium-player">${escapeHtml(player.username)}<br>${player.score} pts</div>
+                                        <div class="podium-bar" data-height="${heights[player.rank]}">${placeLabel[player.rank]}</div>
+                                    </div>
+                                `,
+                            )
+                            .join("")}
+                    </div>
+                `;
+
+                setTimeout(() => {
+                    document
+                        .querySelectorAll(".podium-bar")
+                        .forEach((bar) => {
+                            bar.style.height = `${bar.dataset.height}px`;
+                        });
+                }, 100);
+            }
+
             function showSummary(summary) {
                 stopRoomPolling();
                 stopTransitionCountdown();
+                stopQuestionTimer();
                 clearWaitingRecoveryTimer();
+                hideLeaderboardOverlay();
                 if (currentRoomCode) persistRoomCode(currentRoomCode);
                 showScreen("summaryScreen");
                 showScoreBar(false);
@@ -1928,6 +2522,8 @@
                 `
                     : "";
                 document.getElementById("winnerCard").innerHTML = winnerHtml;
+                renderPodium(summary);
+                if (summary.length > 0) showConfetti();
 
                 // Ranking table
                 const tbody = document.getElementById("rankingBody");
@@ -2096,15 +2692,20 @@
             // ═══════════════════════════════════════════════════════════
 
             function backToLobby() {
+                const roomCodeToKeep = currentRoomCode || getSavedRoomCode();
                 stopRoomPolling();
                 stopTransitionCountdown();
+                stopQuestionTimer();
+                hideLeaderboardOverlay();
                 clearWaitingRecoveryTimer();
-                clearRoomReference();
+                if (roomCodeToKeep) persistRoomCode(roomCodeToKeep);
                 document.getElementById("winnerCard").innerHTML = "";
+                document.getElementById("podiumContainer").innerHTML = "";
                 document.getElementById("rankingBody").innerHTML = "";
                 document.getElementById("detailSection").innerHTML = "";
                 currentQuestion = null;
                 questionOrder = 0;
+                answerSubmitted = false;
                 enterLobby();
             }
 

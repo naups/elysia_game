@@ -589,6 +589,62 @@ describe("Room Management", () => {
     expect(json.success).toBe(true);
   });
 
+  test("only the room master can delete a waiting room session", async () => {
+    const { json: created } = await api("POST", "/api/rooms", {}, master.token);
+    const code = created.room.code;
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+
+    const denied = await api("DELETE", `/api/rooms/${code}`, null, player1.token);
+    expect(denied.json.success).toBe(false);
+    expect(denied.json.message).toContain("master");
+
+    const deleted = await api("DELETE", `/api/rooms/${code}`, null, master.token);
+    expect(deleted.json.success).toBe(true);
+    expect(deleted.json.roomDestroyed).toBe(true);
+
+    const restored = await api("GET", `/api/rooms/${code}`, null, master.token);
+    expect(restored.json.success).toBe(false);
+    expect(restored.json.message).toContain("Room not found");
+  });
+
+  test("deletes a waiting room after its idle timeout", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      { roomIdleTimeoutSeconds: 1 },
+      master.token,
+    );
+    expect(created.success).toBe(true);
+    expect(created.room.settings.room_idle_timeout_seconds).toBe(1);
+    const code = created.room.code;
+
+    await wait(1300);
+
+    const restored = await api("GET", `/api/rooms/${code}`, null, master.token);
+    expect(restored.json.success).toBe(false);
+    expect(restored.json.message).toContain("Room not found");
+  });
+
+  test("keeps a waiting room alive when it is accessed before the idle timeout", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      { roomIdleTimeoutSeconds: 1 },
+      master.token,
+    );
+    const code = created.room.code;
+
+    await wait(600);
+
+    const firstAccess = await api("GET", `/api/rooms/${code}`, null, master.token);
+    expect(firstAccess.json.success).toBe(true);
+
+    await wait(600);
+
+    const secondAccess = await api("GET", `/api/rooms/${code}`, null, master.token);
+    expect(secondAccess.json.success).toBe(true);
+  });
+
   test("finishes a custom-question multiplayer game after all players answer", async () => {
     const { json: created } = await api(
       "POST",
@@ -813,6 +869,247 @@ describe("Room Management", () => {
       closeTrackedSocket(masterSocket);
       closeTrackedSocket(playerSocket);
     }
+  });
+
+  test("starts timed custom questions with question metadata", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      {
+        maxPlayers: 2,
+        questionSource: "custom",
+        questionDelaySeconds: 0,
+        timePerQuestion: 30,
+        customQuestions: [
+          {
+            text: "The sky can be blue",
+            type: "true_false",
+            correct_answer: "True",
+          },
+          {
+            text: "Type the word alpha",
+            type: "fill_blank",
+            correct_answer: "alpha",
+          },
+        ],
+      },
+      master.token,
+    );
+    expect(created.success).toBe(true);
+    expect(created.room.settings.time_per_question_seconds).toBe(30);
+    const code = created.room.code;
+
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+    await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
+
+    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    expect(started.json.success).toBe(true);
+    expect(started.json.timePerQuestionSeconds).toBe(30);
+    expect(Date.parse(started.json.questionStartedAt)).not.toBeNaN();
+    expect(started.json.questions.all.type).toBe("true_false");
+    expect(started.json.questions.all.options).toEqual(["True", "False"]);
+
+    const state = await api("GET", `/api/rooms/${code}/state`, null, player1.token);
+    expect(state.json.success).toBe(true);
+    expect(state.json.gameState.timePerQuestionSeconds).toBe(30);
+    expect(state.json.gameState.questionStartedAt).toBe(started.json.questionStartedAt);
+    expect(state.json.gameState.questions.all.type).toBe("true_false");
+  });
+
+  test("rejects answers submitted after the question timer has expired", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      {
+        maxPlayers: 2,
+        questionSource: "custom",
+        questionDelaySeconds: 0,
+        timePerQuestion: 30,
+        customQuestions: [
+          {
+            text: "Late answer question",
+            options: ["A", "B", "C", "D"],
+            correct_answer: "A",
+          },
+        ],
+      },
+      master.token,
+    );
+    const code = created.room.code;
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+    await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
+
+    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    expect(started.json.success).toBe(true);
+
+    await testPool.query(
+      "UPDATE rooms SET current_question_started_at = NOW() - INTERVAL '31 seconds' WHERE code = $1",
+      [code],
+    );
+
+    const lateAnswer = await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "A", questionOrder: 1 },
+      master.token,
+    );
+    expect(lateAnswer.json.success).toBe(false);
+    expect(lateAnswer.json.message).toContain("time has ended");
+
+    const state = await api("GET", `/api/rooms/${code}`, null, master.token);
+    expect(state.json.room.players.find((player) => player.userId === master.user.id).score).toBe(
+      0,
+    );
+  });
+
+  test("tracks streak bonuses and returns a realtime leaderboard", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      {
+        maxPlayers: 2,
+        questionSource: "custom",
+        questionDelaySeconds: 0,
+        customQuestions: [
+          {
+            text: "First streak question",
+            options: ["A", "B", "C", "D"],
+            correct_answer: "A",
+          },
+          {
+            text: "Second streak question",
+            type: "fill_blank",
+            correct_answer: "alpha",
+          },
+          {
+            text: "Third streak question",
+            type: "true_false",
+            correct_answer: "True",
+          },
+        ],
+      },
+      master.token,
+    );
+    const code = created.room.code;
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+    await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
+
+    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    expect(started.json.success).toBe(true);
+
+    let masterAnswer = await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "A", questionOrder: 1 },
+      master.token,
+    );
+    expect(masterAnswer.json.score).toBe(10);
+    expect(masterAnswer.json.streak).toBe(1);
+    await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "B", questionOrder: 1 },
+      player1.token,
+    );
+    await wait(100);
+
+    masterAnswer = await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: " Alpha ", questionOrder: 2 },
+      master.token,
+    );
+    expect(masterAnswer.json.score).toBe(20);
+    expect(masterAnswer.json.streak).toBe(2);
+    await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "wrong", questionOrder: 2 },
+      player1.token,
+    );
+    await wait(100);
+
+    masterAnswer = await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "true", questionOrder: 3 },
+      master.token,
+    );
+    expect(masterAnswer.json.score).toBe(35);
+    expect(masterAnswer.json.streak).toBe(3);
+    expect(masterAnswer.json.streakBonus).toBe(5);
+    await api(
+      "POST",
+      `/api/rooms/${code}/answer`,
+      { answer: "False", questionOrder: 3 },
+      player1.token,
+    );
+    await wait(100);
+
+    const leaderboard = await api(
+      "GET",
+      `/api/rooms/${code}/leaderboard`,
+      null,
+      master.token,
+    );
+    expect(leaderboard.json.success).toBe(true);
+    expect(leaderboard.json.leaderboard[0]).toMatchObject({
+      userId: master.user.id,
+      rank: 1,
+      score: 35,
+      streak: 3,
+      isCurrentUser: true,
+    });
+    expect(leaderboard.json.leaderboard[1]).toMatchObject({
+      userId: player1.user.id,
+      rank: 2,
+      score: 0,
+      streak: 0,
+      isCurrentUser: false,
+    });
+  });
+
+  test("auto-marks unanswered players wrong when the question timer expires", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      {
+        maxPlayers: 2,
+        questionSource: "custom",
+        questionDelaySeconds: 0,
+        timePerQuestion: 1,
+        customQuestions: [
+          {
+            text: "Timed question",
+            options: ["A", "B", "C", "D"],
+            correct_answer: "A",
+          },
+        ],
+      },
+      master.token,
+    );
+    const code = created.room.code;
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+    await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
+
+    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    expect(started.json.success).toBe(true);
+
+    await wait(1300);
+
+    const restored = await api("GET", `/api/rooms/${code}/state`, null, master.token);
+    expect(restored.json.success).toBe(true);
+    expect(restored.json.finished).toBe(true);
+    expect(restored.json.summary).toHaveLength(2);
+    expect(restored.json.summary.every((player) => player.score === 0)).toBe(true);
+    expect(
+      restored.json.summary.every(
+        (player) =>
+          player.totalAnswered === 1 &&
+          player.answers[0].userAnswer === "" &&
+          player.answers[0].isCorrect === false,
+      ),
+    ).toBe(true);
   });
 });
 
