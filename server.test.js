@@ -146,7 +146,8 @@ async function connectRoomSocket(token, roomCode) {
   await socket.waitFor((message) => message.type === "auth_ok", "auth_ok");
   socket.ws.send(JSON.stringify({ type: "join_room", roomCode, token }));
   await socket.waitFor(
-    (message) => message.type === "room_joined" && message.roomCode === roomCode,
+    (message) =>
+      message.type === "room_joined" && message.roomCode === roomCode,
     "room_joined",
   );
   return socket;
@@ -401,7 +402,12 @@ describe("POST /api/answer", () => {
 describe("GET /api/score/:userId", () => {
   test("returns user score with avatar", async () => {
     const reg = await registerUser("score_test_" + Date.now());
-    const { json } = await api("GET", `/api/score/${reg.user.id}`, null, reg.token);
+    const { json } = await api(
+      "GET",
+      `/api/score/${reg.user.id}`,
+      null,
+      reg.token,
+    );
     expect(json.success).toBe(true);
     expect(json.user.id).toBe(reg.user.id);
     expect(json.user.avatar).toBeDefined();
@@ -449,7 +455,12 @@ describe("GET /api/history/:userId", () => {
       reg.token,
     );
 
-    const { json } = await api("GET", `/api/history/${reg.user.id}`, null, reg.token);
+    const { json } = await api(
+      "GET",
+      `/api/history/${reg.user.id}`,
+      null,
+      reg.token,
+    );
     expect(json.success).toBe(true);
     expect(Array.isArray(json.history)).toBe(true);
     expect(json.history.length).toBeGreaterThan(0);
@@ -594,11 +605,21 @@ describe("Room Management", () => {
     const code = created.room.code;
     await api("POST", `/api/rooms/${code}/join`, null, player1.token);
 
-    const denied = await api("DELETE", `/api/rooms/${code}`, null, player1.token);
+    const denied = await api(
+      "DELETE",
+      `/api/rooms/${code}`,
+      null,
+      player1.token,
+    );
     expect(denied.json.success).toBe(false);
     expect(denied.json.message).toContain("master");
 
-    const deleted = await api("DELETE", `/api/rooms/${code}`, null, master.token);
+    const deleted = await api(
+      "DELETE",
+      `/api/rooms/${code}`,
+      null,
+      master.token,
+    );
     expect(deleted.json.success).toBe(true);
     expect(deleted.json.roomDestroyed).toBe(true);
 
@@ -636,12 +657,22 @@ describe("Room Management", () => {
 
     await wait(600);
 
-    const firstAccess = await api("GET", `/api/rooms/${code}`, null, master.token);
+    const firstAccess = await api(
+      "GET",
+      `/api/rooms/${code}`,
+      null,
+      master.token,
+    );
     expect(firstAccess.json.success).toBe(true);
 
     await wait(600);
 
-    const secondAccess = await api("GET", `/api/rooms/${code}`, null, master.token);
+    const secondAccess = await api(
+      "GET",
+      `/api/rooms/${code}`,
+      null,
+      master.token,
+    );
     expect(secondAccess.json.success).toBe(true);
   });
 
@@ -668,7 +699,12 @@ describe("Room Management", () => {
     await api("POST", `/api/rooms/${code}/join`, null, player1.token);
     await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
 
-    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    const started = await api(
+      "POST",
+      `/api/rooms/${code}/start`,
+      null,
+      master.token,
+    );
     expect(started.json.success).toBe(true);
 
     const firstAnswer = await api(
@@ -691,7 +727,12 @@ describe("Room Management", () => {
 
     await wait(100);
 
-    const restored = await api("GET", `/api/rooms/${code}/state`, null, master.token);
+    const restored = await api(
+      "GET",
+      `/api/rooms/${code}/state`,
+      null,
+      master.token,
+    );
     expect(restored.json.success).toBe(true);
     expect(restored.json.finished).toBe(true);
     expect(restored.json.summary.length).toBe(2);
@@ -728,7 +769,12 @@ describe("Room Management", () => {
     await api("POST", `/api/rooms/${code}/join`, null, player1.token);
     await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
 
-    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    const started = await api(
+      "POST",
+      `/api/rooms/${code}/start`,
+      null,
+      master.token,
+    );
     expect(started.json.success).toBe(true);
 
     await api(
@@ -764,7 +810,9 @@ describe("Room Management", () => {
       player1.token,
     );
     expect(afterDelay.json.gameState.questionNumber).toBe(2);
-    expect(afterDelay.json.gameState.questions.all.text).toBe("Second question");
+    expect(afterDelay.json.gameState.questions.all.text).toBe(
+      "Second question",
+    );
   });
 
   test("broadcasts transition and next question websocket messages to every player", async () => {
@@ -849,7 +897,9 @@ describe("Room Management", () => {
           "player transition",
         ),
       ]);
-      expect(transitions.every((message) => message.gameOver === false)).toBe(true);
+      expect(transitions.every((message) => message.gameOver === false)).toBe(
+        true,
+      );
 
       const nextQuestions = await Promise.all([
         masterSocket.waitFor(
@@ -863,8 +913,12 @@ describe("Room Management", () => {
           "player next_question",
         ),
       ]);
-      expect(nextQuestions[0].questions.all.text).toBe("Socket second question");
-      expect(nextQuestions[1].questions.all.text).toBe("Socket second question");
+      expect(nextQuestions[0].questions.all.text).toBe(
+        "Socket second question",
+      );
+      expect(nextQuestions[1].questions.all.text).toBe(
+        "Socket second question",
+      );
     } finally {
       closeTrackedSocket(masterSocket);
       closeTrackedSocket(playerSocket);
@@ -902,17 +956,29 @@ describe("Room Management", () => {
     await api("POST", `/api/rooms/${code}/join`, null, player1.token);
     await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
 
-    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    const started = await api(
+      "POST",
+      `/api/rooms/${code}/start`,
+      null,
+      master.token,
+    );
     expect(started.json.success).toBe(true);
     expect(started.json.timePerQuestionSeconds).toBe(30);
     expect(Date.parse(started.json.questionStartedAt)).not.toBeNaN();
     expect(started.json.questions.all.type).toBe("true_false");
     expect(started.json.questions.all.options).toEqual(["True", "False"]);
 
-    const state = await api("GET", `/api/rooms/${code}/state`, null, player1.token);
+    const state = await api(
+      "GET",
+      `/api/rooms/${code}/state`,
+      null,
+      player1.token,
+    );
     expect(state.json.success).toBe(true);
     expect(state.json.gameState.timePerQuestionSeconds).toBe(30);
-    expect(state.json.gameState.questionStartedAt).toBe(started.json.questionStartedAt);
+    expect(state.json.gameState.questionStartedAt).toBe(
+      started.json.questionStartedAt,
+    );
     expect(state.json.gameState.questions.all.type).toBe("true_false");
   });
 
@@ -939,7 +1005,12 @@ describe("Room Management", () => {
     await api("POST", `/api/rooms/${code}/join`, null, player1.token);
     await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
 
-    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    const started = await api(
+      "POST",
+      `/api/rooms/${code}/start`,
+      null,
+      master.token,
+    );
     expect(started.json.success).toBe(true);
 
     await testPool.query(
@@ -957,9 +1028,10 @@ describe("Room Management", () => {
     expect(lateAnswer.json.message).toContain("time has ended");
 
     const state = await api("GET", `/api/rooms/${code}`, null, master.token);
-    expect(state.json.room.players.find((player) => player.userId === master.user.id).score).toBe(
-      0,
-    );
+    expect(
+      state.json.room.players.find((player) => player.userId === master.user.id)
+        .score,
+    ).toBe(0);
   });
 
   test("tracks streak bonuses and returns a realtime leaderboard", async () => {
@@ -994,7 +1066,12 @@ describe("Room Management", () => {
     await api("POST", `/api/rooms/${code}/join`, null, player1.token);
     await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
 
-    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    const started = await api(
+      "POST",
+      `/api/rooms/${code}/start`,
+      null,
+      master.token,
+    );
     expect(started.json.success).toBe(true);
 
     let masterAnswer = await api(
@@ -1092,16 +1169,28 @@ describe("Room Management", () => {
     await api("POST", `/api/rooms/${code}/join`, null, player1.token);
     await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
 
-    const started = await api("POST", `/api/rooms/${code}/start`, null, master.token);
+    const started = await api(
+      "POST",
+      `/api/rooms/${code}/start`,
+      null,
+      master.token,
+    );
     expect(started.json.success).toBe(true);
 
     await wait(1300);
 
-    const restored = await api("GET", `/api/rooms/${code}/state`, null, master.token);
+    const restored = await api(
+      "GET",
+      `/api/rooms/${code}/state`,
+      null,
+      master.token,
+    );
     expect(restored.json.success).toBe(true);
     expect(restored.json.finished).toBe(true);
     expect(restored.json.summary).toHaveLength(2);
-    expect(restored.json.summary.every((player) => player.score === 0)).toBe(true);
+    expect(restored.json.summary.every((player) => player.score === 0)).toBe(
+      true,
+    );
     expect(
       restored.json.summary.every(
         (player) =>
@@ -1149,8 +1238,62 @@ describe("Full Game Flow", () => {
       totalScore += ans.isCorrect ? 10 : 0;
     }
 
-    const { json: score } = await api("GET", `/api/score/${reg.user.id}`, null, reg.token);
+    const { json: score } = await api(
+      "GET",
+      `/api/score/${reg.user.id}`,
+      null,
+      reg.token,
+    );
     expect(score.success).toBe(true);
     expect(score.user.total_score).toBe(totalScore);
+  });
+});
+
+describe("Secure Auth Endpoints (disabled by default)", () => {
+  test("POST /api/auth/register returns 503 when disabled", async () => {
+    const { status, json } = await api("POST", "/api/auth/register", {
+      username: "testuser",
+      email: "test@example.com",
+      password: "Password1",
+    });
+    expect(status).toBe(503);
+    expect(json.success).toBe(false);
+    expect(json.message).toContain("disabled");
+  });
+
+  test("POST /api/auth/login returns 503 when disabled", async () => {
+    const { status, json } = await api("POST", "/api/auth/login", {
+      login: "testuser",
+      password: "Password1",
+    });
+    expect(status).toBe(503);
+    expect(json.success).toBe(false);
+    expect(json.message).toContain("disabled");
+  });
+
+  test("POST /api/auth/refresh returns 503 when disabled", async () => {
+    const { status, json } = await api("POST", "/api/auth/refresh", {
+      refreshToken: "some.token.here",
+    });
+    expect(status).toBe(503);
+    expect(json.success).toBe(false);
+    expect(json.message).toContain("disabled");
+  });
+
+  test("GET /api/auth/me returns 503 when disabled", async () => {
+    const { status, json } = await api("GET", "/api/auth/me");
+    expect(status).toBe(503);
+    expect(json.success).toBe(false);
+    expect(json.message).toContain("disabled");
+  });
+
+  test("Legacy /api/register still works when secure auth is disabled", async () => {
+    const { status, json } = await api("POST", "/api/register", {
+      username: "legacyuser",
+    });
+    expect(status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.token).toBeTruthy();
+    expect(json.user.username).toBe("legacyuser");
   });
 });
