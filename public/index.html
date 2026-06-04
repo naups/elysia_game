@@ -205,6 +205,13 @@
                 color: #667eea;
                 letter-spacing: 2px;
             }
+            .active-room-actions {
+                display: flex;
+                gap: 8px;
+                justify-content: center;
+                flex-wrap: wrap;
+                margin-top: 10px;
+            }
             /* Room */
             .room-code {
                 text-align: center;
@@ -659,13 +666,21 @@
                         <div>
                             Active room: <strong id="activeRoomCode">------</strong>
                         </div>
-                        <button
-                            class="btn btn-success btn-small"
-                            onclick="returnToActiveRoom()"
-                            style="margin-top: 10px"
-                        >
-                            Return to Room
-                        </button>
+                        <div class="active-room-actions">
+                            <button
+                                class="btn btn-success btn-small"
+                                onclick="returnToActiveRoom()"
+                            >
+                                Return to Room
+                            </button>
+                            <button
+                                class="btn btn-danger btn-small hidden"
+                                id="activeRoomDeleteBtn"
+                                onclick="deleteSavedRoom()"
+                            >
+                                Delete Room
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Join by code -->
@@ -724,6 +739,16 @@
                                     value="0"
                                     min="0"
                                     max="300"
+                                />
+                            </div>
+                            <div class="setting-row">
+                                <label>Idle Timeout</label>
+                                <input
+                                    type="number"
+                                    id="setRoomIdleTimeout"
+                                    value="1800"
+                                    min="0"
+                                    max="86400"
                                 />
                             </div>
                             <div class="setting-row">
@@ -930,6 +955,9 @@
             let timePerQuestionSeconds = 0;
             let currentQuestionStartedAt = null;
             let answerSubmitted = false;
+            let questionInputLocked = false;
+            let deletingRoomCode = null;
+            const locallyDeletedRooms = new Set();
 
             // ═══════════════════════════════════════════════════════════
             //  SCREEN MANAGEMENT
@@ -1028,6 +1056,7 @@
                 hideLeaderboardOverlay();
                 currentRoomCode = null;
                 roomMasterId = null;
+                isMaster = false;
                 localStorage.removeItem("roomCode");
                 setRoomUrl(null);
                 updateActiveRoomPanel();
@@ -1041,6 +1070,14 @@
                 if (code) {
                     document.getElementById("activeRoomCode").textContent =
                         code;
+                }
+                const deleteBtn = document.getElementById("activeRoomDeleteBtn");
+                if (deleteBtn) {
+                    const canDelete =
+                        !!code &&
+                        !!currentUser &&
+                        (isMaster || roomMasterId === currentUser.id);
+                    deleteBtn.classList.toggle("hidden", !canDelete);
                 }
             }
 
@@ -1301,6 +1338,29 @@
                             showSummary(data.summary);
                         }
                         break;
+                    case "room_deleted": {
+                        const deletedCode = data.roomCode?.toUpperCase();
+                        const savedCode = getSavedRoomCode();
+                        if (
+                            deletedCode &&
+                            (deletedCode === currentRoomCode ||
+                                deletedCode === savedCode)
+                        ) {
+                            const isLocalDelete =
+                                deletingRoomCode === deletedCode ||
+                                locallyDeletedRooms.has(deletedCode);
+                            clearRoomReference();
+                            enterLobby();
+                            if (!isLocalDelete) {
+                                alert(
+                                    data.reason === "idle_timeout"
+                                        ? "Room expired because it was idle."
+                                        : "Room was deleted.",
+                                );
+                            }
+                        }
+                        break;
+                    }
                     case "error":
                         console.error("WS error:", data.message);
                         break;
@@ -1407,6 +1467,10 @@
                     document.getElementById("setTimePerQuestion").value,
                     10,
                 );
+                const idleTimeoutSeconds = parseInt(
+                    document.getElementById("setRoomIdleTimeout").value,
+                    10,
+                );
                 const settings = {
                     maxPlayers:
                         parseInt(
@@ -1427,6 +1491,9 @@
                     timePerQuestion: Number.isFinite(timeLimitSeconds)
                         ? timeLimitSeconds
                         : 0,
+                    roomIdleTimeoutSeconds: Number.isFinite(idleTimeoutSeconds)
+                        ? idleTimeoutSeconds
+                        : 1800,
                     customQuestions:
                         document.getElementById("setQuestionSource").value ===
                         "custom"
@@ -1657,14 +1724,8 @@
                             setTimeout(() => {
                                 answerSubmitted = true;
                                 stopQuestionTimer();
-                                document
-                                    .querySelectorAll(
-                                        ".option-btn, .submit-answer-btn",
-                                    )
-                                    .forEach((b) => b.classList.add("disabled"));
-                                const fillInput =
-                                    document.getElementById("fillAnswerInput");
-                                if (fillInput) fillInput.disabled = true;
+                                questionInputLocked = true;
+                                setAnswerControlsDisabled(true);
                                 if (data.gameState.transition) {
                                     startTransitionCountdown(
                                         data.gameState.transition,
@@ -1701,6 +1762,39 @@
                 await restoreRoomFromCode(code);
             }
 
+            async function deleteSavedRoom() {
+                const code = getSavedRoomCode();
+                if (!code) return;
+
+                const errEl = document.getElementById("lobbyError");
+                errEl.textContent = "";
+                if (!confirm(`Delete room ${code}?`)) return;
+
+                deletingRoomCode = code;
+                locallyDeletedRooms.add(code);
+                try {
+                    const data = await api("DELETE", `/api/rooms/${code}`);
+                    if (data.success) {
+                        clearRoomReference();
+                        enterLobby();
+                        return;
+                    }
+
+                    if (data.message === "Room not found") {
+                        clearRoomReference();
+                        enterLobby();
+                        return;
+                    }
+
+                    errEl.textContent = data.message || "Failed to delete room";
+                } catch (_) {
+                    errEl.textContent = "Failed to delete room";
+                } finally {
+                    deletingRoomCode = null;
+                    setTimeout(() => locallyDeletedRooms.delete(code), 5000);
+                }
+            }
+
             // ═══════════════════════════════════════════════════════════
             //  ROOM UI
             // ═══════════════════════════════════════════════════════════
@@ -1725,6 +1819,7 @@
                     `Max Players: ${s.max_players} | Questions: ${s.question_count}\n` +
                     `Question Delay: ${s.question_delay_seconds ?? 10}s\n` +
                     `Time per Question: ${s.time_per_question_seconds || 0}s\n` +
+                    `Idle Timeout: ${s.room_idle_timeout_seconds ?? 1800}s\n` +
                     `Source: ${s.question_source} | Mode: ${
                         s.question_mode === "same_for_all"
                             ? "Same for All"
@@ -1842,6 +1937,7 @@
                 timePerQuestionSeconds = data.timePerQuestionSeconds || 0;
                 currentQuestionStartedAt = data.questionStartedAt || null;
                 answerSubmitted = false;
+                questionInputLocked = false;
                 updateProgress();
 
                 // Get question — could be same for all or per-player
@@ -1889,12 +1985,15 @@
                 if (waitingRecoveryTimer) return;
 
                 const queue = document.getElementById("answerQueue");
+                const isWaitingText = (value) =>
+                    value === "Waiting for other players..." ||
+                    value === "Time is up. Waiting for other players...";
                 if (
                     !currentRoomCode ||
                     !currentUser ||
                     document.getElementById("quizScreen").style.display ===
                         "none" ||
-                    queue?.textContent !== "Waiting for other players..."
+                    !isWaitingText(queue?.textContent)
                 ) {
                     return;
                 }
@@ -1909,8 +2008,7 @@
                         currentRoomCode !== roomCode ||
                         document.getElementById("quizScreen").style.display ===
                             "none" ||
-                        currentQueue?.textContent !==
-                            "Waiting for other players..."
+                        !isWaitingText(currentQueue?.textContent)
                     ) {
                         return;
                     }
@@ -1969,6 +2067,36 @@
                 }, 10000);
             }
 
+            function setAnswerControlsDisabled(disabled) {
+                document
+                    .querySelectorAll(".option-btn, .submit-answer-btn")
+                    .forEach((button) => {
+                        button.classList.toggle("disabled", disabled);
+                        button.disabled = disabled;
+                    });
+                const fillInput = document.getElementById("fillAnswerInput");
+                if (fillInput) fillInput.disabled = disabled;
+            }
+
+            function hasQuestionTimerExpired() {
+                if (!timePerQuestionSeconds || !currentQuestionStartedAt)
+                    return false;
+                const started = Date.parse(currentQuestionStartedAt);
+                if (!Number.isFinite(started)) return false;
+                return Date.now() >= started + timePerQuestionSeconds * 1000;
+            }
+
+            function lockAnswerInput(message) {
+                questionInputLocked = true;
+                answerSubmitted = true;
+                stopQuestionTimer();
+                setAnswerControlsDisabled(true);
+                if (message) {
+                    document.getElementById("answerQueue").textContent =
+                        message;
+                }
+            }
+
             function stopQuestionTimer() {
                 if (questionTimerInterval) {
                     clearInterval(questionTimerInterval);
@@ -2000,8 +2128,7 @@
                     fill.style.width = `${pct}%`;
                     text.textContent = `${Math.ceil(remainingMs / 1000)}s`;
                     if (remainingMs <= 0) {
-                        stopQuestionTimer();
-                        autoSubmitEmptyAnswer();
+                        handleQuestionTimeExpired();
                     }
                 };
 
@@ -2009,12 +2136,12 @@
                 questionTimerInterval = setInterval(render, 250);
             }
 
-            function autoSubmitEmptyAnswer() {
+            function handleQuestionTimeExpired() {
                 if (answerSubmitted || !currentRoomCode || !currentQuestion)
                     return;
                 const queue = document.getElementById("answerQueue");
-                queue.textContent = "Time is up. Submitting blank answer...";
-                selectAnswer("", null, true);
+                lockAnswerInput("Time is up. Waiting for other players...");
+                startWaitingRecoveryTimer();
             }
 
             function hideLeaderboardOverlay() {
@@ -2186,15 +2313,19 @@
             }
 
             async function selectAnswer(answer, btn, isAutomatic = false) {
-                if (answerSubmitted) return;
+                if (answerSubmitted || questionInputLocked) return;
+                if (hasQuestionTimerExpired()) {
+                    lockAnswerInput("Time is up. Waiting for other players...");
+                    startWaitingRecoveryTimer();
+                    return;
+                }
                 answerSubmitted = true;
+                questionInputLocked = true;
                 stopQuestionTimer();
                 const buttons = document.querySelectorAll(
                     ".option-btn, .submit-answer-btn",
                 );
-                buttons.forEach((b) => b.classList.add("disabled"));
-                const fillInput = document.getElementById("fillAnswerInput");
-                if (fillInput) fillInput.disabled = true;
+                setAnswerControlsDisabled(true);
 
                 try {
                     const data = await api(
@@ -2208,9 +2339,18 @@
                     );
 
                     if (!data.success) {
+                        if (data.message === "Question time has ended") {
+                            lockAnswerInput(
+                                "Time is up. Waiting for other players...",
+                            );
+                            startWaitingRecoveryTimer();
+                            return;
+                        }
                         document.getElementById("answerQueue").textContent =
-                            "Error submitting answer";
+                            data.message || "Error submitting answer";
                         answerSubmitted = false;
+                        questionInputLocked = false;
+                        setAnswerControlsDisabled(false);
                         return;
                     }
 
@@ -2552,18 +2692,20 @@
             // ═══════════════════════════════════════════════════════════
 
             function backToLobby() {
+                const roomCodeToKeep = currentRoomCode || getSavedRoomCode();
                 stopRoomPolling();
                 stopTransitionCountdown();
                 stopQuestionTimer();
                 hideLeaderboardOverlay();
                 clearWaitingRecoveryTimer();
-                clearRoomReference();
+                if (roomCodeToKeep) persistRoomCode(roomCodeToKeep);
                 document.getElementById("winnerCard").innerHTML = "";
                 document.getElementById("podiumContainer").innerHTML = "";
                 document.getElementById("rankingBody").innerHTML = "";
                 document.getElementById("detailSection").innerHTML = "";
                 currentQuestion = null;
                 questionOrder = 0;
+                answerSubmitted = false;
                 enterLobby();
             }
 

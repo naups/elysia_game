@@ -39,11 +39,13 @@ CREATE TABLE IF NOT EXISTS rooms (
         "result_mode": "instant",
         "question_delay_seconds": 10,
         "time_per_question_seconds": 0,
+        "room_idle_timeout_seconds": 1800,
         "custom_questions": []
     }',
     status VARCHAR(20) DEFAULT 'waiting',
     current_question_order INTEGER DEFAULT 0,
     current_question_started_at TIMESTAMPTZ,
+    last_activity_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

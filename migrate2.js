@@ -17,6 +17,14 @@ try {
   );
   console.log("OK: Normalized current_question_started_at timezone");
   await pool.query(
+    "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ DEFAULT NOW()",
+  );
+  console.log("OK: Added rooms.last_activity_at column");
+  await pool.query(
+    "UPDATE rooms SET last_activity_at = COALESCE(last_activity_at, created_at AT TIME ZONE 'UTC', NOW()) WHERE last_activity_at IS NULL",
+  );
+  console.log("OK: Backfilled rooms.last_activity_at");
+  await pool.query(
     "ALTER TABLE questions ADD COLUMN IF NOT EXISTS question_type VARCHAR(20) DEFAULT 'multiple_choice'",
   );
   console.log("OK: Added questions.question_type column");
@@ -51,6 +59,12 @@ try {
      WHERE NOT (settings ? 'time_per_question_seconds')`,
   );
   console.log("OK: Backfilled rooms.settings.time_per_question_seconds");
+  await pool.query(
+    `UPDATE rooms
+     SET settings = settings || '{"room_idle_timeout_seconds": 1800}'::jsonb
+     WHERE NOT (settings ? 'room_idle_timeout_seconds')`,
+  );
+  console.log("OK: Backfilled rooms.settings.room_idle_timeout_seconds");
 } catch (e) {
   console.log("SKIP:", e.message);
 }

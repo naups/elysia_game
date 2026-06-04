@@ -28,6 +28,7 @@ const DEFAULT_ROOM_SETTINGS = {
   result_mode: "instant",
   question_delay_seconds: 10,
   time_per_question_seconds: 0,
+  room_idle_timeout_seconds: 1800,
   custom_questions: [],
 };
 
@@ -140,10 +141,20 @@ function getTimePerQuestionSeconds(settings = {}) {
   );
 }
 
+function getRoomIdleTimeoutSeconds(settings = {}) {
+  return clampInteger(
+    settings?.room_idle_timeout_seconds ?? settings?.roomIdleTimeoutSeconds,
+    0,
+    86400,
+    DEFAULT_ROOM_SETTINGS.room_idle_timeout_seconds,
+  );
+}
+
 function withDefaultRoomSettings(settings = {}) {
   const merged = { ...DEFAULT_ROOM_SETTINGS, ...(settings || {}) };
   merged.question_delay_seconds = getQuestionDelaySeconds(merged);
   merged.time_per_question_seconds = getTimePerQuestionSeconds(merged);
+  merged.room_idle_timeout_seconds = getRoomIdleTimeoutSeconds(merged);
   if (!Array.isArray(merged.custom_questions)) merged.custom_questions = [];
   return merged;
 }
@@ -172,6 +183,16 @@ function getPendingRoomTransition(roomCode, questionOrder) {
     advanceAt: pending.advanceAt,
     gameOver: pending.gameOver,
   };
+}
+
+function hasQuestionTimeExpired(room, settings, now = Date.now()) {
+  const timeLimit = settings?.time_per_question_seconds || 0;
+  if (!timeLimit || !room?.current_question_started_at) return false;
+
+  const startedAt = Date.parse(room.current_question_started_at);
+  if (!Number.isFinite(startedAt)) return false;
+
+  return now >= startedAt + timeLimit * 1000;
 }
 
 async function rollbackAndReturn(client, response) {
@@ -254,6 +275,7 @@ function normalizeRoomSettings(body = {}) {
     result_mode: body?.resultMode === "end" ? "end" : DEFAULT_ROOM_SETTINGS.result_mode,
     question_delay_seconds: getQuestionDelaySeconds(body),
     time_per_question_seconds: getTimePerQuestionSeconds(body),
+    room_idle_timeout_seconds: getRoomIdleTimeoutSeconds(body),
     custom_questions: customQuestions,
   };
 }
@@ -264,6 +286,8 @@ async function ensureDatabaseShape() {
     "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS current_question_order INTEGER DEFAULT 0",
     "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS current_question_started_at TIMESTAMPTZ",
     "ALTER TABLE rooms ALTER COLUMN current_question_started_at TYPE TIMESTAMPTZ USING current_question_started_at AT TIME ZONE 'UTC'",
+    "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ DEFAULT NOW()",
+    "UPDATE rooms SET last_activity_at = COALESCE(last_activity_at, created_at AT TIME ZONE 'UTC', NOW()) WHERE last_activity_at IS NULL",
     "ALTER TABLE questions ADD COLUMN IF NOT EXISTS question_type VARCHAR(20) DEFAULT 'multiple_choice'",
     "ALTER TABLE room_players ADD COLUMN IF NOT EXISTS streak INTEGER DEFAULT 0",
     "ALTER TABLE room_questions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)",
@@ -276,6 +300,9 @@ async function ensureDatabaseShape() {
     `UPDATE rooms
      SET settings = settings || '{"time_per_question_seconds": 0}'::jsonb
      WHERE NOT (settings ? 'time_per_question_seconds')`,
+    `UPDATE rooms
+     SET settings = settings || '{"room_idle_timeout_seconds": 1800}'::jsonb
+     WHERE NOT (settings ? 'room_idle_timeout_seconds')`,
   ];
 
   for (const statement of statements) {
@@ -340,12 +367,98 @@ async function broadcastToRoom(roomCode, message, excludeWs = null) {
   }
 }
 
-async function getRoomState(roomCode) {
+function clearRoomRuntimeState(roomCode) {
+  const code = roomCode.toUpperCase();
+  clearRoomAdvanceTimer(code);
+  clearRoomQuestionTimer(code);
+
+  const connections = roomConnections.get(code);
+  if (connections) {
+    for (const conn of connections) {
+      const state = socketStates.get(conn.socketId);
+      if (state?.roomCode === code) state.roomCode = null;
+    }
+  }
+  roomConnections.delete(code);
+}
+
+async function destroyRoomSession(room, reason = "deleted") {
+  const code = room.code.toUpperCase();
+  await broadcastToRoom(code, {
+    type: "room_deleted",
+    roomCode: code,
+    reason,
+  });
+  await pool.query("DELETE FROM rooms WHERE id = $1", [room.id]);
+  clearRoomRuntimeState(code);
+}
+
+async function cleanupExpiredWaitingRooms() {
+  const expired = await pool.query(
+    `SELECT id, code
+     FROM (
+       SELECT id,
+              code,
+              COALESCE(
+                CASE
+                  WHEN settings ? 'room_idle_timeout_seconds'
+                  THEN NULLIF(settings->>'room_idle_timeout_seconds', '')::integer
+                END,
+                $1
+              ) AS idle_timeout_seconds,
+              COALESCE(last_activity_at, created_at AT TIME ZONE 'UTC', NOW()) AS last_activity
+       FROM rooms
+       WHERE status = 'waiting'
+     ) waiting_rooms
+     WHERE idle_timeout_seconds > 0
+       AND last_activity <= NOW() - (idle_timeout_seconds * INTERVAL '1 second')`,
+    [DEFAULT_ROOM_SETTINGS.room_idle_timeout_seconds],
+  );
+
+  if (expired.rows.length === 0) return [];
+
+  for (const room of expired.rows) {
+    await broadcastToRoom(room.code, {
+      type: "room_deleted",
+      roomCode: room.code,
+      reason: "idle_timeout",
+    });
+  }
+
+  const deleted = await pool.query(
+    "DELETE FROM rooms WHERE id = ANY($1::uuid[]) RETURNING code",
+    [expired.rows.map((room) => room.id)],
+  );
+
+  for (const room of deleted.rows) clearRoomRuntimeState(room.code);
+  return deleted.rows.map((room) => room.code);
+}
+
+async function touchRoomActivity(roomId) {
+  await pool.query(
+    "UPDATE rooms SET last_activity_at = NOW() WHERE id = $1 AND status = 'waiting'",
+    [roomId],
+  );
+}
+
+async function touchRoomActivityByCode(roomCode) {
+  await pool.query(
+    "UPDATE rooms SET last_activity_at = NOW() WHERE code = $1 AND status = 'waiting'",
+    [roomCode.toUpperCase()],
+  );
+}
+
+async function findRoomByCode(roomCode) {
+  await cleanupExpiredWaitingRooms();
   const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-    roomCode,
+    roomCode.toUpperCase(),
   ]);
-  if (roomResult.rows.length === 0) return null;
-  const room = roomResult.rows[0];
+  return roomResult.rows[0] || null;
+}
+
+async function getRoomState(roomCode) {
+  const room = await findRoomByCode(roomCode);
+  if (!room) return null;
 
   const playersResult = await pool.query(
     `SELECT rp.user_id, rp.is_ready, rp.score, rp.streak, u.username
@@ -712,6 +825,7 @@ app.post("/api/rooms", async ({ headers, body }) => {
   const settings = normalizeRoomSettings(body);
 
   try {
+    await cleanupExpiredWaitingRooms();
     const code = generateRoomCode();
     const result = await pool.query(
       `INSERT INTO rooms (code, master_id, settings) VALUES ($1, $2, $3) RETURNING *`,
@@ -749,13 +863,8 @@ app.post("/api/rooms/:code/join", async ({ headers, params }) => {
   if (!userId) return { success: false, message: "Unauthorized" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     if (room.status !== "waiting")
       return { success: false, message: "Room is not accepting players" };
     room.settings = withDefaultRoomSettings(room.settings);
@@ -773,6 +882,7 @@ app.post("/api/rooms/:code/join", async ({ headers, params }) => {
     );
     if (existing.rows.length > 0) {
       // Already in room — return state
+      await touchRoomActivity(room.id);
       const state = await getRoomState(params.code.toUpperCase());
       return { success: true, room: state };
     }
@@ -781,6 +891,7 @@ app.post("/api/rooms/:code/join", async ({ headers, params }) => {
       "INSERT INTO room_players (room_id, user_id, is_ready) VALUES ($1, $2, false)",
       [room.id, userId],
     );
+    await touchRoomActivity(room.id);
 
     // Broadcast to room
     const user = await getUser(userId);
@@ -810,13 +921,8 @@ app.post("/api/rooms/:code/leave", async ({ headers, params }) => {
   if (!userId) return { success: false, message: "Unauthorized" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     await pool.query(
       "DELETE FROM room_players WHERE room_id = $1 AND user_id = $2",
       [room.id, userId],
@@ -834,13 +940,11 @@ app.post("/api/rooms/:code/leave", async ({ headers, params }) => {
           room.id,
         ]);
       } else {
-        await pool.query("DELETE FROM rooms WHERE id = $1", [room.id]);
-        clearRoomAdvanceTimer(params.code.toUpperCase());
-        clearRoomQuestionTimer(params.code.toUpperCase());
-        roomConnections.delete(params.code.toUpperCase());
+        await destroyRoomSession(room, "empty_room");
         return { success: true, roomDestroyed: true };
       }
     }
+    await touchRoomActivity(room.id);
 
     broadcastToRoom(params.code.toUpperCase(), {
       type: "player_left",
@@ -854,6 +958,26 @@ app.post("/api/rooms/:code/leave", async ({ headers, params }) => {
   }
 });
 
+// Delete room session (master only)
+app.delete("/api/rooms/:code", async ({ headers, params }) => {
+  const token = getBearerToken(headers);
+  const userId = await validateSession(token);
+  if (!userId) return { success: false, message: "Unauthorized" };
+
+  try {
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
+    if (room.master_id !== userId)
+      return { success: false, message: "Only room master can delete" };
+
+    await destroyRoomSession(room, "deleted");
+    return { success: true, roomDestroyed: true };
+  } catch (error) {
+    console.error("Delete room error:", error.message);
+    return { success: false, message: "Failed to delete room" };
+  }
+});
+
 // Kick player (master only)
 app.post("/api/rooms/:code/kick", async ({ headers, body, params }) => {
   const token = getBearerToken(headers);
@@ -864,13 +988,8 @@ app.post("/api/rooms/:code/kick", async ({ headers, body, params }) => {
   if (!targetUserId) return { success: false, message: "Target user required" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     if (room.master_id !== userId)
       return { success: false, message: "Only room master can kick" };
     if (targetUserId === userId)
@@ -880,6 +999,7 @@ app.post("/api/rooms/:code/kick", async ({ headers, body, params }) => {
       "DELETE FROM room_players WHERE room_id = $1 AND user_id = $2",
       [room.id, targetUserId],
     );
+    await touchRoomActivity(room.id);
 
     broadcastToRoom(room.code, {
       type: "player_kicked",
@@ -901,13 +1021,8 @@ app.post("/api/rooms/:code/ready", async ({ headers, params }) => {
   if (!userId) return { success: false, message: "Unauthorized" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     const updated = await pool.query(
       `UPDATE room_players SET is_ready = NOT is_ready
        WHERE room_id = $1 AND user_id = $2 RETURNING is_ready`,
@@ -915,6 +1030,7 @@ app.post("/api/rooms/:code/ready", async ({ headers, params }) => {
     );
     if (updated.rows.length === 0)
       return { success: false, message: "Forbidden" };
+    await touchRoomActivity(room.id);
 
     broadcastToRoom(room.code, {
       type: "player_ready",
@@ -936,13 +1052,8 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
   if (!userId) return { success: false, message: "Unauthorized" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     if (room.master_id !== userId)
       return { success: false, message: "Only room master can start" };
     if (room.status !== "waiting")
@@ -1041,7 +1152,7 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
     // Update room status and set current question
     const questionStartedAt = new Date().toISOString();
     await pool.query(
-      "UPDATE rooms SET status = 'playing', current_question_order = 1, current_question_started_at = $1, settings = $2 WHERE id = $3",
+      "UPDATE rooms SET status = 'playing', current_question_order = 1, current_question_started_at = $1, settings = $2, last_activity_at = NOW() WHERE id = $3",
       [questionStartedAt, JSON.stringify(settings), room.id],
     );
 
@@ -1335,6 +1446,7 @@ app.get("/api/rooms/:code", async ({ headers, params }) => {
   if (!state) return { success: false, message: "Room not found" };
   if (!state.players.some((player) => player.userId === userId))
     return { success: false, message: "Forbidden" };
+  await touchRoomActivityByCode(params.code);
   return { success: true, room: state };
 });
 
@@ -1344,15 +1456,11 @@ app.get("/api/rooms/:code/leaderboard", async ({ headers, params }) => {
   if (!userId) return { success: false, message: "Unauthorized" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     if (!(await isRoomMember(room.id, userId)))
       return { success: false, message: "Forbidden" };
+    await touchRoomActivity(room.id);
 
     const leaderboard = await buildRoomLeaderboard(room.id, userId);
     return { success: true, leaderboard };
@@ -1369,18 +1477,15 @@ app.get("/api/rooms/:code/state", async ({ headers, params }) => {
   if (!userId) return { success: false, message: "Unauthorized" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     const settings = withDefaultRoomSettings(room.settings);
     room.settings = settings;
     const state = await getRoomState(params.code.toUpperCase());
+    if (!state) return { success: false, message: "Room not found" };
     if (!state.players.some((player) => player.userId === userId))
       return { success: false, message: "Forbidden" };
+    await touchRoomActivity(room.id);
 
     if (room.status === "finished") {
       const summary = await buildRoomSummary(room);
@@ -1478,6 +1583,12 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       return rollbackAndReturn(client, {
         success: false,
         message: "Question is not active",
+      });
+
+    if (hasQuestionTimeExpired(room, settings))
+      return rollbackAndReturn(client, {
+        success: false,
+        message: "Question time has ended",
       });
 
     const assignedQuestion = await client.query(
@@ -1738,15 +1849,11 @@ app.get("/api/rooms/:code/summary", async ({ headers, params }) => {
   if (!userId) return { success: false, message: "Unauthorized" };
 
   try {
-    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
-    if (roomResult.rows.length === 0)
-      return { success: false, message: "Room not found" };
-
-    const room = roomResult.rows[0];
+    const room = await findRoomByCode(params.code);
+    if (!room) return { success: false, message: "Room not found" };
     if (!(await isRoomMember(room.id, userId)))
       return { success: false, message: "Forbidden" };
+    await touchRoomActivity(room.id);
 
     const summary = await buildRoomSummary(room);
     return { success: true, summary, winner: summary[0] || null };
@@ -1802,17 +1909,16 @@ app.ws("/ws", {
       const code = roomCode?.toUpperCase();
       if (!code) return;
 
-      const roomResult = await pool.query("SELECT id FROM rooms WHERE code = $1", [
-        code,
-      ]);
-      if (roomResult.rows.length === 0) {
+      const room = await findRoomByCode(code);
+      if (!room) {
         ws.send(JSON.stringify({ type: "error", message: "Room not found" }));
         return;
       }
-      if (!(await isRoomMember(roomResult.rows[0].id, state.userId))) {
+      if (!(await isRoomMember(room.id, state.userId))) {
         ws.send(JSON.stringify({ type: "error", message: "Forbidden" }));
         return;
       }
+      await touchRoomActivity(room.id);
 
       if (!roomConnections.has(code)) {
         roomConnections.set(code, new Set());
@@ -1876,6 +1982,13 @@ app.ws("/ws", {
     socketStates.delete(getSocketId(ws));
   },
 });
+
+const roomCleanupInterval = setInterval(() => {
+  cleanupExpiredWaitingRooms().catch((error) => {
+    console.error("Room cleanup error:", error.message);
+  });
+}, 60_000);
+roomCleanupInterval.unref?.();
 
 // ═══════════════════════════════════════════════════════════════════
 //  START SERVER
