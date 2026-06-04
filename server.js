@@ -217,7 +217,9 @@ function normalizeCustomQuestions(questions) {
 
   return questions
     .map((question) => {
-      const type = normalizeQuestionType(question?.type || question?.question_type);
+      const type = normalizeQuestionType(
+        question?.type || question?.question_type,
+      );
       const correctAnswer =
         typeof question?.correct_answer === "string"
           ? question.correct_answer.trim()
@@ -228,7 +230,9 @@ function normalizeCustomQuestions(questions) {
         options: formatQuestionOptions(
           type,
           Array.isArray(question?.options)
-            ? question.options.map((option) => String(option).trim()).filter(Boolean)
+            ? question.options
+                .map((option) => String(option).trim())
+                .filter(Boolean)
             : [],
         ),
         correct_answer: correctAnswer,
@@ -247,7 +251,9 @@ function normalizeCustomQuestions(questions) {
       return (
         question.options.length >= 2 &&
         question.options.some(
-          (option) => normalizeAnswer(option) === normalizeAnswer(question.correct_answer),
+          (option) =>
+            normalizeAnswer(option) ===
+            normalizeAnswer(question.correct_answer),
         )
       );
     });
@@ -262,17 +268,28 @@ function normalizeRoomSettings(body = {}) {
   const questionCount =
     questionSource === "custom"
       ? customQuestions.length
-      : clampInteger(body?.questionCount, 1, 20, DEFAULT_ROOM_SETTINGS.question_count);
+      : clampInteger(
+          body?.questionCount,
+          1,
+          20,
+          DEFAULT_ROOM_SETTINGS.question_count,
+        );
 
   return {
-    max_players: clampInteger(body?.maxPlayers, 2, 10, DEFAULT_ROOM_SETTINGS.max_players),
+    max_players: clampInteger(
+      body?.maxPlayers,
+      2,
+      10,
+      DEFAULT_ROOM_SETTINGS.max_players,
+    ),
     question_count: questionCount,
     question_source: questionSource,
     question_mode:
       body?.questionMode === "random_per_player"
         ? "random_per_player"
         : DEFAULT_ROOM_SETTINGS.question_mode,
-    result_mode: body?.resultMode === "end" ? "end" : DEFAULT_ROOM_SETTINGS.result_mode,
+    result_mode:
+      body?.resultMode === "end" ? "end" : DEFAULT_ROOM_SETTINGS.result_mode,
     question_delay_seconds: getQuestionDelaySeconds(body),
     time_per_question_seconds: getTimePerQuestionSeconds(body),
     room_idle_timeout_seconds: getRoomIdleTimeoutSeconds(body),
@@ -303,6 +320,11 @@ async function ensureDatabaseShape() {
     `UPDATE rooms
      SET settings = settings || '{"room_idle_timeout_seconds": 1800}'::jsonb
      WHERE NOT (settings ? 'room_idle_timeout_seconds')`,
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'local'",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
   ];
 
   for (const statement of statements) {
@@ -707,7 +729,8 @@ app.post("/api/answer", async ({ headers, body }) => {
       });
 
     const correctAnswer = questionResult.rows[0].correct_answer;
-    const isCorrect = normalizeAnswer(userAnswer) === normalizeAnswer(correctAnswer);
+    const isCorrect =
+      normalizeAnswer(userAnswer) === normalizeAnswer(correctAnswer);
     const points = isCorrect ? 10 : 0;
 
     const existingAnswer = await client.query(
@@ -1089,7 +1112,9 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
     room.settings = settings;
 
     await pool.query("DELETE FROM room_answers WHERE room_id = $1", [room.id]);
-    await pool.query("DELETE FROM room_questions WHERE room_id = $1", [room.id]);
+    await pool.query("DELETE FROM room_questions WHERE room_id = $1", [
+      room.id,
+    ]);
 
     if (settings.question_mode === "random_per_player") {
       for (const player of playersResult.rows) {
@@ -1128,7 +1153,13 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
           `INSERT INTO room_questions
              (room_id, user_id, question_id, custom_question, question_order)
            VALUES ($1, $2, $3, $4, $5)`,
-          [room.id, null, null, JSON.stringify(settings.custom_questions[i]), i + 1],
+          [
+            room.id,
+            null,
+            null,
+            JSON.stringify(settings.custom_questions[i]),
+            i + 1,
+          ],
         );
       }
     } else {
@@ -1157,9 +1188,10 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
     );
 
     // Reset player scores
-    await pool.query("UPDATE room_players SET score = 0, streak = 0 WHERE room_id = $1", [
-      room.id,
-    ]);
+    await pool.query(
+      "UPDATE room_players SET score = 0, streak = 0 WHERE room_id = $1",
+      [room.id],
+    );
 
     // Get first question(s) based on mode
     const firstQuestions = await getQuestionsForRoom({ ...room, settings }, 1);
@@ -1307,7 +1339,13 @@ async function markMissingAnswersWrong(room, questionOrder) {
            (room_id, user_id, question_id, question_order, answer, is_correct)
          VALUES ($1, $2, $3, $4, $5, false)
          ON CONFLICT DO NOTHING`,
-        [room.id, player.user_id, player.question_id || null, questionOrder, ""],
+        [
+          room.id,
+          player.user_id,
+          player.question_id || null,
+          questionOrder,
+          "",
+        ],
       );
       await client.query(
         "UPDATE room_players SET streak = 0 WHERE room_id = $1 AND user_id = $2",
@@ -1337,15 +1375,21 @@ function scheduleQuestionTimeout(room, questionOrder, questionStartedAt) {
     Date.parse(questionStartedAt) + timeLimit * 1000,
   ).toISOString();
 
-  const timer = setTimeout(async () => {
-    roomQuestionTimers.delete(code);
-    const latestRoom = await markMissingAnswersWrong(room, questionOrder);
-    if (!latestRoom) return;
-    await scheduleRoomAdvance(
-      { ...latestRoom, settings: withDefaultRoomSettings(latestRoom.settings) },
-      questionOrder,
-    );
-  }, Math.max(0, Date.parse(expiresAt) - Date.now()));
+  const timer = setTimeout(
+    async () => {
+      roomQuestionTimers.delete(code);
+      const latestRoom = await markMissingAnswersWrong(room, questionOrder);
+      if (!latestRoom) return;
+      await scheduleRoomAdvance(
+        {
+          ...latestRoom,
+          settings: withDefaultRoomSettings(latestRoom.settings),
+        },
+        questionOrder,
+      );
+    },
+    Math.max(0, Date.parse(expiresAt) - Date.now()),
+  );
   if (typeof timer.unref === "function") timer.unref();
 
   roomQuestionTimers.set(code, {
@@ -1368,15 +1412,17 @@ async function scheduleRoomAdvance(room, questionOrder) {
   const timer = setTimeout(async () => {
     roomAdvanceTimers.delete(code);
     try {
-      const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
-        code,
-      ]);
+      const roomResult = await pool.query(
+        "SELECT * FROM rooms WHERE code = $1",
+        [code],
+      );
       if (roomResult.rows.length === 0) return;
 
       const latestRoom = roomResult.rows[0];
       const latestSettings = withDefaultRoomSettings(latestRoom.settings);
       const activeOrder = latestRoom.current_question_order || 1;
-      if (latestRoom.status !== "playing" || activeOrder !== questionOrder) return;
+      if (latestRoom.status !== "playing" || activeOrder !== questionOrder)
+        return;
 
       if (questionOrder >= latestSettings.question_count) {
         await endGame({ ...latestRoom, settings: latestSettings });
@@ -1554,9 +1600,10 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
     await client.query("BEGIN");
     await client.query("LOCK TABLE room_answers IN SHARE ROW EXCLUSIVE MODE");
 
-    const roomResult = await client.query("SELECT * FROM rooms WHERE code = $1", [
-      params.code.toUpperCase(),
-    ]);
+    const roomResult = await client.query(
+      "SELECT * FROM rooms WHERE code = $1",
+      [params.code.toUpperCase()],
+    );
     if (roomResult.rows.length === 0)
       return rollbackAndReturn(client, {
         success: false,
@@ -1577,7 +1624,10 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       [room.id, userId],
     );
     if (member.rows.length === 0)
-      return rollbackAndReturn(client, { success: false, message: "Forbidden" });
+      return rollbackAndReturn(client, {
+        success: false,
+        message: "Forbidden",
+      });
 
     if (order !== (room.current_question_order || 1))
       return rollbackAndReturn(client, {
@@ -1612,7 +1662,11 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       });
 
     const assigned = assignedQuestion.rows[0];
-    if (questionId && assigned.question_id && Number(questionId) !== assigned.question_id)
+    if (
+      questionId &&
+      assigned.question_id &&
+      Number(questionId) !== assigned.question_id
+    )
       return rollbackAndReturn(client, {
         success: false,
         message: "Question mismatch",
@@ -1649,7 +1703,10 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       typeof assigned.custom_question === "string"
         ? JSON.parse(assigned.custom_question)
         : assigned.custom_question;
-    correctAnswer = assignedCustom?.correct_answer || assigned.correct_answer || correctAnswer;
+    correctAnswer =
+      assignedCustom?.correct_answer ||
+      assigned.correct_answer ||
+      correctAnswer;
 
     if (!correctAnswer)
       return rollbackAndReturn(client, {
@@ -1675,7 +1732,8 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       };
     }
 
-    const isCorrect = normalizeAnswer(answer) === normalizeAnswer(correctAnswer);
+    const isCorrect =
+      normalizeAnswer(answer) === normalizeAnswer(correctAnswer);
     const nextStreak = isCorrect ? (member.rows[0]?.streak || 0) + 1 : 0;
     const streakBonus = isCorrect && nextStreak >= 3 ? 5 : 0;
     const points = isCorrect ? 10 + streakBonus : 0;
@@ -1685,7 +1743,14 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       `INSERT INTO room_answers
          (room_id, user_id, question_id, question_order, answer, is_correct)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [room.id, userId, assigned.question_id || null, order, answer.trim(), isCorrect],
+      [
+        room.id,
+        userId,
+        assigned.question_id || null,
+        order,
+        answer.trim(),
+        isCorrect,
+      ],
     );
 
     // Update score
