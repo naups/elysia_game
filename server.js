@@ -487,7 +487,7 @@ async function validateSession(token) {
 
 async function getUser(userId) {
   const result = await pool.query(
-    "SELECT id, username, total_score FROM users WHERE id = $1",
+    "SELECT id, username, email, total_score, auth_provider, last_login_at FROM users WHERE id = $1",
     [userId],
   );
   return result.rows[0] || null;
