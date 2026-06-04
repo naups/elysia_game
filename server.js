@@ -2259,9 +2259,36 @@ app.get("/api/rooms/:code/summary", async ({ headers, params }) => {
 // ═══════════════════════════════════════════════════════════════════
 
 app.ws("/ws", {
+  async beforeHandle({ query, headers, error }) {
+    if (getSecureAuthEnabled()) {
+      const token =
+        query?.token ||
+        headers["authorization"]?.replace(/^Bearer\s+/i, "") ||
+        "";
+      const userId = await validateSession(token);
+      if (!userId) {
+        return error(401, {
+          success: false,
+          message: "Unauthorized connection",
+        });
+      }
+    }
+  },
   async open(ws) {
-    getSocketState(ws);
-    // Connection established — waiting for auth message
+    const state = getSocketState(ws);
+    if (getSecureAuthEnabled()) {
+      const token =
+        ws.data?.query?.token ||
+        ws.data?.headers?.["authorization"]?.replace(/^Bearer\s+/i, "") ||
+        "";
+      const userId = await validateSession(token);
+      if (userId) {
+        const user = await getUser(userId);
+        state.userId = userId;
+        state.username = user?.username;
+        ws.send(JSON.stringify({ type: "auth_ok", userId }));
+      }
+    }
   },
   async message(ws, raw) {
     let data;
