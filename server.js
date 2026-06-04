@@ -744,6 +744,208 @@ app.post("/api/register", async ({ body }) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+//  SECURE AUTH ENDPOINTS (enabled by ENABLE_SECURE_AUTH=true)
+// ═══════════════════════════════════════════════════════════════════
+
+// POST /api/auth/register
+app.post("/api/auth/register", async ({ body, headers, set }) => {
+  if (!getSecureAuthEnabled()) {
+    set.status = 503;
+    return { success: false, message: "Secure authentication is disabled" };
+  }
+
+  const ip = headers["x-forwarded-for"] || "127.0.0.1";
+  if (!checkRateLimit(ip, 5, 60000)) {
+    set.status = 429;
+    return { success: false, message: "Too many requests" };
+  }
+
+  const { username, email, password } = body || {};
+
+  if (!username || username.length < 3 || !USERNAME_PATTERN.test(username)) {
+    set.status = 400;
+    return { success: false, message: "Invalid username" };
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    set.status = 400;
+    return { success: false, message: "Invalid email" };
+  }
+  if (
+    !password ||
+    password.length < 8 ||
+    !/[A-Z]/.test(password) ||
+    !/[a-z]/.test(password) ||
+    !/[0-9]/.test(password)
+  ) {
+    set.status = 400;
+    return {
+      success: false,
+      message:
+        "Password must be at least 8 characters and contain uppercase, lowercase, and a number",
+    };
+  }
+
+  try {
+    const existing = await pool.query(
+      "SELECT id, username, email FROM users WHERE username = $1 OR email = $2",
+      [username, email],
+    );
+    if (existing.rows.length > 0) {
+      set.status = 400;
+      return { success: false, message: "Username or email already exists" };
+    }
+
+    const cost = parseInt(process.env.PASSWORD_HASH_COST || "12");
+    const passwordHash = await Bun.password.hash(password, {
+      algorithm: "bcrypt",
+      cost,
+    });
+
+    const result = await pool.query(
+      "INSERT INTO users (username, email, password_hash, auth_provider) VALUES ($1, $2, $3, 'local') RETURNING id, username, email, created_at",
+      [username, email, passwordHash],
+    );
+
+    set.status = 201;
+    return { success: true, user: result.rows[0] };
+  } catch (error) {
+    console.error("Auth register error:", error.message);
+    set.status = 500;
+    return { success: false, message: "Internal server error" };
+  }
+});
+
+// POST /api/auth/login
+app.post("/api/auth/login", async ({ body, headers, set }) => {
+  if (!getSecureAuthEnabled()) {
+    set.status = 503;
+    return { success: false, message: "Secure authentication is disabled" };
+  }
+
+  const ip = headers["x-forwarded-for"] || "127.0.0.1";
+  if (!checkRateLimit(ip, 10, 60000)) {
+    set.status = 429;
+    return { success: false, message: "Too many requests" };
+  }
+
+  const { login, password } = body || {};
+  if (!login || !password) {
+    set.status = 400;
+    return { success: false, message: "Login and password are required" };
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT id, username, email, password_hash FROM users WHERE (username = $1 OR email = $1) AND password_hash IS NOT NULL",
+      [login],
+    );
+    if (result.rows.length === 0) {
+      set.status = 401;
+      return { success: false, message: "Invalid credentials" };
+    }
+
+    const user = result.rows[0];
+    const valid = await Bun.password.verify(password, user.password_hash);
+    if (!valid) {
+      set.status = 401;
+      return { success: false, message: "Invalid credentials" };
+    }
+
+    // Update last login
+    await pool.query("UPDATE users SET last_login_at = NOW() WHERE id = $1", [
+      user.id,
+    ]);
+
+    const accessToken = signJwt(
+      { userId: user.id },
+      getJwtAccessSecret(),
+      getAccessTokenExpiresIn(),
+    );
+    const refreshToken = signJwt(
+      { userId: user.id, type: "refresh" },
+      getJwtRefreshSecret(),
+      getRefreshTokenExpiresIn(),
+    );
+
+    return {
+      success: true,
+      user: { id: user.id, username: user.username, email: user.email },
+      accessToken,
+      refreshToken,
+    };
+  } catch (error) {
+    console.error("Auth login error:", error.message);
+    set.status = 500;
+    return { success: false, message: "Internal server error" };
+  }
+});
+
+// POST /api/auth/refresh
+app.post("/api/auth/refresh", async ({ body, set }) => {
+  if (!getSecureAuthEnabled()) {
+    set.status = 503;
+    return { success: false, message: "Secure authentication is disabled" };
+  }
+
+  const { refreshToken } = body || {};
+  if (!refreshToken) {
+    set.status = 400;
+    return { success: false, message: "Refresh token required" };
+  }
+
+  const payload = verifyJwt(refreshToken, getJwtRefreshSecret());
+  if (!payload || payload.type !== "refresh") {
+    set.status = 401;
+    return { success: false, message: "Invalid refresh token" };
+  }
+
+  const user = await getUser(payload.userId);
+  if (!user) {
+    set.status = 401;
+    return { success: false, message: "User not found" };
+  }
+
+  const accessToken = signJwt(
+    { userId: user.id },
+    getJwtAccessSecret(),
+    getAccessTokenExpiresIn(),
+  );
+  const newRefreshToken = signJwt(
+    { userId: user.id, type: "refresh" },
+    getJwtRefreshSecret(),
+    getRefreshTokenExpiresIn(),
+  );
+
+  return { success: true, accessToken, refreshToken: newRefreshToken };
+});
+
+// GET /api/auth/me
+app.get("/api/auth/me", async ({ headers, set }) => {
+  if (!getSecureAuthEnabled()) {
+    set.status = 503;
+    return { success: false, message: "Secure authentication is disabled" };
+  }
+
+  const token = getBearerToken(headers);
+  const userId = await validateSession(token);
+  if (!userId) {
+    set.status = 401;
+    return { success: false, message: "Unauthorized" };
+  }
+
+  const user = await pool.query(
+    "SELECT id, username, email, total_score, created_at, last_login_at FROM users WHERE id = $1",
+    [userId],
+  );
+  if (user.rows.length === 0) {
+    set.status = 404;
+    return { success: false, message: "User not found" };
+  }
+
+  return { success: true, user: user.rows[0] };
+});
+
 // Logout
 app.post("/api/logout", async ({ headers }) => {
   const token = getBearerToken(headers);
