@@ -13,6 +13,8 @@ import "dotenv/config";
 const roomConnections = new Map();
 // Map<roomCode, { timer, questionOrder, delaySeconds, advanceAt, gameOver }>
 const roomAdvanceTimers = new Map();
+// Map<roomCode, { timer, questionOrder, expiresAt }>
+const roomQuestionTimers = new Map();
 // Map<token, { userId, expiresAt }>
 const activeSessions = new Map();
 // Map<socketId, { userId, username, roomCode }>
@@ -25,6 +27,7 @@ const DEFAULT_ROOM_SETTINGS = {
   question_mode: "same_for_all",
   result_mode: "instant",
   question_delay_seconds: 10,
+  time_per_question_seconds: 0,
   custom_questions: [],
 };
 
@@ -128,9 +131,19 @@ function getQuestionDelaySeconds(settings = {}) {
   );
 }
 
+function getTimePerQuestionSeconds(settings = {}) {
+  return clampInteger(
+    settings?.time_per_question_seconds ?? settings?.timePerQuestion,
+    0,
+    300,
+    DEFAULT_ROOM_SETTINGS.time_per_question_seconds,
+  );
+}
+
 function withDefaultRoomSettings(settings = {}) {
   const merged = { ...DEFAULT_ROOM_SETTINGS, ...(settings || {}) };
   merged.question_delay_seconds = getQuestionDelaySeconds(merged);
+  merged.time_per_question_seconds = getTimePerQuestionSeconds(merged);
   if (!Array.isArray(merged.custom_questions)) merged.custom_questions = [];
   return merged;
 }
@@ -140,6 +153,13 @@ function clearRoomAdvanceTimer(roomCode) {
   if (!pending) return;
   clearTimeout(pending.timer);
   roomAdvanceTimers.delete(roomCode.toUpperCase());
+}
+
+function clearRoomQuestionTimer(roomCode) {
+  const pending = roomQuestionTimers.get(roomCode.toUpperCase());
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  roomQuestionTimers.delete(roomCode.toUpperCase());
 }
 
 function getPendingRoomTransition(roomCode, questionOrder) {
@@ -159,27 +179,57 @@ async function rollbackAndReturn(client, response) {
   return response;
 }
 
+function normalizeQuestionType(type) {
+  return ["multiple_choice", "true_false", "fill_blank"].includes(type)
+    ? type
+    : "multiple_choice";
+}
+
+function formatQuestionOptions(type, options) {
+  if (type === "true_false") return ["True", "False"];
+  if (type === "fill_blank") return [];
+  return Array.isArray(options) ? options : [];
+}
+
 function normalizeCustomQuestions(questions) {
   if (!Array.isArray(questions)) return [];
 
   return questions
-    .map((question) => ({
-      text: typeof question?.text === "string" ? question.text.trim() : "",
-      options: Array.isArray(question?.options)
-        ? question.options.map((option) => String(option).trim()).filter(Boolean)
-        : [],
-      correct_answer:
+    .map((question) => {
+      const type = normalizeQuestionType(question?.type || question?.question_type);
+      const correctAnswer =
         typeof question?.correct_answer === "string"
           ? question.correct_answer.trim()
-          : "",
-    }))
-    .filter(
-      (question) =>
-        question.text &&
+          : "";
+      const normalized = {
+        text: typeof question?.text === "string" ? question.text.trim() : "",
+        type,
+        options: formatQuestionOptions(
+          type,
+          Array.isArray(question?.options)
+            ? question.options.map((option) => String(option).trim()).filter(Boolean)
+            : [],
+        ),
+        correct_answer: correctAnswer,
+      };
+
+      if (type === "true_false") {
+        normalized.correct_answer =
+          normalizeAnswer(correctAnswer) === "false" ? "False" : "True";
+      }
+
+      return normalized;
+    })
+    .filter((question) => {
+      if (!question.text || !question.correct_answer) return false;
+      if (question.type === "fill_blank") return true;
+      return (
         question.options.length >= 2 &&
-        question.correct_answer &&
-        question.options.includes(question.correct_answer),
-    );
+        question.options.some(
+          (option) => normalizeAnswer(option) === normalizeAnswer(question.correct_answer),
+        )
+      );
+    });
 }
 
 function normalizeRoomSettings(body = {}) {
@@ -203,6 +253,7 @@ function normalizeRoomSettings(body = {}) {
         : DEFAULT_ROOM_SETTINGS.question_mode,
     result_mode: body?.resultMode === "end" ? "end" : DEFAULT_ROOM_SETTINGS.result_mode,
     question_delay_seconds: getQuestionDelaySeconds(body),
+    time_per_question_seconds: getTimePerQuestionSeconds(body),
     custom_questions: customQuestions,
   };
 }
@@ -211,6 +262,10 @@ async function ensureDatabaseShape() {
   const statements = [
     "CREATE EXTENSION IF NOT EXISTS pgcrypto",
     "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS current_question_order INTEGER DEFAULT 0",
+    "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS current_question_started_at TIMESTAMPTZ",
+    "ALTER TABLE rooms ALTER COLUMN current_question_started_at TYPE TIMESTAMPTZ USING current_question_started_at AT TIME ZONE 'UTC'",
+    "ALTER TABLE questions ADD COLUMN IF NOT EXISTS question_type VARCHAR(20) DEFAULT 'multiple_choice'",
+    "ALTER TABLE room_players ADD COLUMN IF NOT EXISTS streak INTEGER DEFAULT 0",
     "ALTER TABLE room_questions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)",
     "ALTER TABLE room_answers ADD COLUMN IF NOT EXISTS question_order INTEGER",
     "UPDATE room_answers SET question_order = COALESCE(question_order, question_id, 0) WHERE question_order IS NULL",
@@ -218,6 +273,9 @@ async function ensureDatabaseShape() {
     `UPDATE rooms
      SET settings = settings || '{"question_delay_seconds": 10}'::jsonb
      WHERE NOT (settings ? 'question_delay_seconds')`,
+    `UPDATE rooms
+     SET settings = settings || '{"time_per_question_seconds": 0}'::jsonb
+     WHERE NOT (settings ? 'time_per_question_seconds')`,
   ];
 
   for (const statement of statements) {
@@ -290,7 +348,7 @@ async function getRoomState(roomCode) {
   const room = roomResult.rows[0];
 
   const playersResult = await pool.query(
-    `SELECT rp.user_id, rp.is_ready, rp.score, u.username
+    `SELECT rp.user_id, rp.is_ready, rp.score, rp.streak, u.username
      FROM room_players rp
      JOIN users u ON rp.user_id = u.id
      WHERE rp.room_id = $1
@@ -310,6 +368,7 @@ async function getRoomState(roomCode) {
       avatar: getAvatarUrl(p.username),
       isReady: p.is_ready,
       score: p.score,
+      streak: p.streak || 0,
     })),
   };
 }
@@ -317,6 +376,27 @@ async function getRoomState(roomCode) {
 // ═══════════════════════════════════════════════════════════════════
 //  APP SETUP
 // ═══════════════════════════════════════════════════════════════════
+
+async function buildRoomLeaderboard(roomId, currentUserId) {
+  const standings = await pool.query(
+    `SELECT rp.user_id, rp.score, rp.streak, u.username
+     FROM room_players rp
+     JOIN users u ON rp.user_id = u.id
+     WHERE rp.room_id = $1
+     ORDER BY rp.score DESC, rp.joined_at ASC`,
+    [roomId],
+  );
+
+  return standings.rows.map((player, index) => ({
+    rank: index + 1,
+    userId: player.user_id,
+    username: player.username,
+    avatar: getAvatarUrl(player.username),
+    score: player.score,
+    streak: player.streak || 0,
+    isCurrentUser: player.user_id === currentUserId,
+  }));
+}
 
 const app = new Elysia()
   .use(cors())
@@ -478,6 +558,7 @@ app.get("/api/questions/next", async ({ headers }) => {
         id: question.id,
         text: question.question_text,
         options,
+        type: question.question_type || "multiple_choice",
       },
       currentScore,
     };
@@ -755,6 +836,7 @@ app.post("/api/rooms/:code/leave", async ({ headers, params }) => {
       } else {
         await pool.query("DELETE FROM rooms WHERE id = $1", [room.id]);
         clearRoomAdvanceTimer(params.code.toUpperCase());
+        clearRoomQuestionTimer(params.code.toUpperCase());
         roomConnections.delete(params.code.toUpperCase());
         return { success: true, roomDestroyed: true };
       }
@@ -957,18 +1039,21 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
     }
 
     // Update room status and set current question
+    const questionStartedAt = new Date().toISOString();
     await pool.query(
-      "UPDATE rooms SET status = 'playing', current_question_order = 1, settings = $1 WHERE id = $2",
-      [JSON.stringify(settings), room.id],
+      "UPDATE rooms SET status = 'playing', current_question_order = 1, current_question_started_at = $1, settings = $2 WHERE id = $3",
+      [questionStartedAt, JSON.stringify(settings), room.id],
     );
 
     // Reset player scores
-    await pool.query("UPDATE room_players SET score = 0 WHERE room_id = $1", [
+    await pool.query("UPDATE room_players SET score = 0, streak = 0 WHERE room_id = $1", [
       room.id,
     ]);
 
     // Get first question(s) based on mode
-    const firstQuestions = await getQuestionsForRoom(room, 1);
+    const firstQuestions = await getQuestionsForRoom({ ...room, settings }, 1);
+
+    scheduleQuestionTimeout({ ...room, settings }, 1, questionStartedAt);
 
     broadcastToRoom(room.code, {
       type: "game_started",
@@ -976,6 +1061,8 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
       questionNumber: 1,
       totalQuestions,
       resultMode: settings.result_mode,
+      timePerQuestionSeconds: settings.time_per_question_seconds,
+      questionStartedAt,
     });
 
     // Return first question in REST response as fallback
@@ -986,6 +1073,8 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
       questionNumber: 1,
       totalQuestions,
       resultMode: settings.result_mode,
+      timePerQuestionSeconds: settings.time_per_question_seconds,
+      questionStartedAt,
     };
   } catch (error) {
     console.error("Start game error:", error.message);
@@ -1000,7 +1089,7 @@ async function getQuestionsForRoom(room, questionOrder) {
   if (settings.question_mode === "random_per_player") {
     // Each player gets the question assigned at game start.
     const assignedQuestions = await pool.query(
-      `SELECT rq.user_id, rq.question_id, rq.custom_question, q.question_text, q.options
+      `SELECT rq.user_id, rq.question_id, rq.custom_question, q.question_text, q.options, q.question_type
        FROM room_questions rq
        LEFT JOIN questions q ON rq.question_id = q.id
        WHERE rq.room_id = $1 AND rq.question_order = $2 AND rq.user_id IS NOT NULL`,
@@ -1015,7 +1104,8 @@ async function getQuestionsForRoom(room, questionOrder) {
       result[row.user_id] = customQuestion
         ? {
             text: customQuestion.text,
-            options: customQuestion.options,
+            options: customQuestion.options || [],
+            type: customQuestion.type || "multiple_choice",
           }
         : {
             id: row.question_id,
@@ -1024,13 +1114,14 @@ async function getQuestionsForRoom(room, questionOrder) {
               typeof row.options === "string"
                 ? JSON.parse(row.options)
                 : row.options,
+            type: row.question_type || "multiple_choice",
           };
     }
     return result;
   } else {
     // Same question for all
     const rq = await pool.query(
-      `SELECT rq.*, q.question_text, q.options, q.correct_answer
+      `SELECT rq.*, q.question_text, q.options, q.correct_answer, q.question_type
        FROM room_questions rq
        LEFT JOIN questions q ON rq.question_id = q.id
        WHERE rq.room_id = $1 AND rq.question_order = $2 AND rq.user_id IS NULL`,
@@ -1045,7 +1136,8 @@ async function getQuestionsForRoom(room, questionOrder) {
     const question = customQuestion
       ? {
           text: customQuestion.text,
-          options: customQuestion.options,
+          options: customQuestion.options || [],
+          type: customQuestion.type || "multiple_choice",
         }
       : {
           id: row.question_id,
@@ -1054,9 +1146,102 @@ async function getQuestionsForRoom(room, questionOrder) {
             typeof row.options === "string"
               ? JSON.parse(row.options)
               : row.options,
+          type: row.question_type || "multiple_choice",
         };
     return { all: question };
   }
+}
+
+async function markMissingAnswersWrong(room, questionOrder) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("LOCK TABLE room_answers IN SHARE ROW EXCLUSIVE MODE");
+
+    const roomResult = await client.query("SELECT * FROM rooms WHERE id = $1", [
+      room.id,
+    ]);
+    if (roomResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const latestRoom = roomResult.rows[0];
+    if (
+      latestRoom.status !== "playing" ||
+      (latestRoom.current_question_order || 1) !== questionOrder
+    ) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const missingPlayers = await client.query(
+      `SELECT rp.user_id, rq.question_id
+       FROM room_players rp
+       LEFT JOIN room_answers ra
+         ON ra.room_id = rp.room_id
+        AND ra.user_id = rp.user_id
+        AND ra.question_order = $2
+       LEFT JOIN room_questions rq
+         ON rq.room_id = rp.room_id
+        AND rq.question_order = $2
+        AND (rq.user_id = rp.user_id OR rq.user_id IS NULL)
+       WHERE rp.room_id = $1 AND ra.id IS NULL`,
+      [room.id, questionOrder],
+    );
+
+    for (const player of missingPlayers.rows) {
+      await client.query(
+        `INSERT INTO room_answers
+           (room_id, user_id, question_id, question_order, answer, is_correct)
+         VALUES ($1, $2, $3, $4, $5, false)
+         ON CONFLICT DO NOTHING`,
+        [room.id, player.user_id, player.question_id || null, questionOrder, ""],
+      );
+      await client.query(
+        "UPDATE room_players SET streak = 0 WHERE room_id = $1 AND user_id = $2",
+        [room.id, player.user_id],
+      );
+    }
+
+    await client.query("COMMIT");
+    return latestRoom;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("Question timeout error:", error.message);
+    return null;
+  } finally {
+    client.release();
+  }
+}
+
+function scheduleQuestionTimeout(room, questionOrder, questionStartedAt) {
+  const code = room.code.toUpperCase();
+  const settings = withDefaultRoomSettings(room.settings);
+  const timeLimit = settings.time_per_question_seconds;
+  clearRoomQuestionTimer(code);
+  if (!timeLimit) return;
+
+  const expiresAt = new Date(
+    Date.parse(questionStartedAt) + timeLimit * 1000,
+  ).toISOString();
+
+  const timer = setTimeout(async () => {
+    roomQuestionTimers.delete(code);
+    const latestRoom = await markMissingAnswersWrong(room, questionOrder);
+    if (!latestRoom) return;
+    await scheduleRoomAdvance(
+      { ...latestRoom, settings: withDefaultRoomSettings(latestRoom.settings) },
+      questionOrder,
+    );
+  }, Math.max(0, Date.parse(expiresAt) - Date.now()));
+  if (typeof timer.unref === "function") timer.unref();
+
+  roomQuestionTimers.set(code, {
+    timer,
+    questionOrder,
+    expiresAt,
+  });
 }
 
 async function scheduleRoomAdvance(room, questionOrder) {
@@ -1067,6 +1252,7 @@ async function scheduleRoomAdvance(room, questionOrder) {
   const advanceAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
 
   clearRoomAdvanceTimer(code);
+  clearRoomQuestionTimer(code);
 
   const timer = setTimeout(async () => {
     roomAdvanceTimers.delete(code);
@@ -1087,16 +1273,22 @@ async function scheduleRoomAdvance(room, questionOrder) {
       }
 
       const nextOrder = questionOrder + 1;
+      const questionStartedAt = new Date().toISOString();
       await pool.query(
         `UPDATE rooms
-         SET current_question_order = $1
-         WHERE id = $2 AND status = 'playing' AND current_question_order = $3`,
-        [nextOrder, latestRoom.id, questionOrder],
+         SET current_question_order = $1, current_question_started_at = $2
+         WHERE id = $3 AND status = 'playing' AND current_question_order = $4`,
+        [nextOrder, questionStartedAt, latestRoom.id, questionOrder],
       );
 
       const nextQuestions = await getQuestionsForRoom(
         { ...latestRoom, settings: latestSettings },
         nextOrder,
+      );
+      scheduleQuestionTimeout(
+        { ...latestRoom, settings: latestSettings },
+        nextOrder,
+        questionStartedAt,
       );
       broadcastToRoom(code, {
         type: "next_question",
@@ -1104,6 +1296,8 @@ async function scheduleRoomAdvance(room, questionOrder) {
         questionNumber: nextOrder,
         totalQuestions: latestSettings.question_count,
         resultMode: latestSettings.result_mode,
+        timePerQuestionSeconds: latestSettings.time_per_question_seconds,
+        questionStartedAt,
       });
     } catch (error) {
       console.error("Scheduled room advance error:", error.message);
@@ -1142,6 +1336,30 @@ app.get("/api/rooms/:code", async ({ headers, params }) => {
   if (!state.players.some((player) => player.userId === userId))
     return { success: false, message: "Forbidden" };
   return { success: true, room: state };
+});
+
+app.get("/api/rooms/:code/leaderboard", async ({ headers, params }) => {
+  const token = getBearerToken(headers);
+  const userId = await validateSession(token);
+  if (!userId) return { success: false, message: "Unauthorized" };
+
+  try {
+    const roomResult = await pool.query("SELECT * FROM rooms WHERE code = $1", [
+      params.code.toUpperCase(),
+    ]);
+    if (roomResult.rows.length === 0)
+      return { success: false, message: "Room not found" };
+
+    const room = roomResult.rows[0];
+    if (!(await isRoomMember(room.id, userId)))
+      return { success: false, message: "Forbidden" };
+
+    const leaderboard = await buildRoomLeaderboard(room.id, userId);
+    return { success: true, leaderboard };
+  } catch (error) {
+    console.error("Leaderboard error:", error.message);
+    return { success: false, message: "Failed to get leaderboard" };
+  }
 });
 
 // Get game state for reconnection
@@ -1200,6 +1418,10 @@ app.get("/api/rooms/:code/state", async ({ headers, params }) => {
         questionNumber: currentOrder,
         totalQuestions: settings.question_count,
         resultMode: settings.result_mode,
+        timePerQuestionSeconds: settings.time_per_question_seconds,
+        questionStartedAt: room.current_question_started_at
+          ? new Date(room.current_question_started_at).toISOString()
+          : null,
         alreadyAnswered,
         transition: getPendingRoomTransition(room.code, currentOrder),
       },
@@ -1218,7 +1440,7 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
 
   const { questionId, answer, questionOrder } = body || {};
   const order = Number.parseInt(questionOrder, 10);
-  if (typeof answer !== "string" || !answer.trim() || !Number.isInteger(order))
+  if (typeof answer !== "string" || !Number.isInteger(order))
     return { success: false, message: "Missing fields" };
 
   const client = await pool.connect();
@@ -1246,7 +1468,7 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       });
 
     const member = await client.query(
-      "SELECT score FROM room_players WHERE room_id = $1 AND user_id = $2",
+      "SELECT score, streak FROM room_players WHERE room_id = $1 AND user_id = $2",
       [room.id, userId],
     );
     if (member.rows.length === 0)
@@ -1337,11 +1559,15 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
         isCorrect: existingAnswer.rows[0].is_correct,
         correctAnswer,
         score: member.rows[0]?.score || 0,
+        streak: member.rows[0]?.streak || 0,
+        streakBonus: 0,
       };
     }
 
     const isCorrect = normalizeAnswer(answer) === normalizeAnswer(correctAnswer);
-    const points = isCorrect ? 10 : 0;
+    const nextStreak = isCorrect ? (member.rows[0]?.streak || 0) + 1 : 0;
+    const streakBonus = isCorrect && nextStreak >= 3 ? 5 : 0;
+    const points = isCorrect ? 10 + streakBonus : 0;
 
     // Save answer
     await client.query(
@@ -1353,12 +1579,12 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
 
     // Update score
     await client.query(
-      "UPDATE room_players SET score = score + $1 WHERE room_id = $2 AND user_id = $3",
-      [points, room.id, userId],
+      "UPDATE room_players SET score = score + $1, streak = $2 WHERE room_id = $3 AND user_id = $4",
+      [points, nextStreak, room.id, userId],
     );
 
     const userScore = await client.query(
-      "SELECT score FROM room_players WHERE room_id = $1 AND user_id = $2",
+      "SELECT score, streak FROM room_players WHERE room_id = $1 AND user_id = $2",
       [room.id, userId],
     );
 
@@ -1367,6 +1593,9 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
       isCorrect,
       correctAnswer,
       score: userScore.rows[0]?.score || 0,
+      streak: userScore.rows[0]?.streak || 0,
+      streakBonus,
+      pointsAwarded: points,
     };
 
     // Handle result mode
@@ -1431,7 +1660,7 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
 
 async function buildRoomSummary(room) {
   const standings = await pool.query(
-    `SELECT rp.user_id, rp.score, u.username
+    `SELECT rp.user_id, rp.score, rp.streak, u.username
      FROM room_players rp
      JOIN users u ON rp.user_id = u.id
      WHERE rp.room_id = $1
@@ -1470,6 +1699,7 @@ async function buildRoomSummary(room) {
       username: player.username,
       avatar: getAvatarUrl(player.username),
       score: player.score,
+      streak: player.streak || 0,
       accuracy,
       correctCount,
       totalAnswered: playerAnswers.length,
@@ -1486,6 +1716,7 @@ async function buildRoomSummary(room) {
 // End game and send summary
 async function endGame(room) {
   clearRoomAdvanceTimer(room.code);
+  clearRoomQuestionTimer(room.code);
 
   await pool.query("UPDATE rooms SET status = 'finished' WHERE id = $1", [
     room.id,

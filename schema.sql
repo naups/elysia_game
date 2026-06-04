@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS questions (
     id SERIAL PRIMARY KEY,
     question_text TEXT NOT NULL,
     correct_answer TEXT NOT NULL,
-    options JSONB NOT NULL -- Array jawaban pilihan
+    options JSONB NOT NULL, -- Array jawaban pilihan
+    question_type VARCHAR(20) DEFAULT 'multiple_choice'
 );
 
 -- Tabel Sessions (Token-based auth)
@@ -37,10 +38,12 @@ CREATE TABLE IF NOT EXISTS rooms (
         "question_mode": "same_for_all",
         "result_mode": "instant",
         "question_delay_seconds": 10,
+        "time_per_question_seconds": 0,
         "custom_questions": []
     }',
     status VARCHAR(20) DEFAULT 'waiting',
     current_question_order INTEGER DEFAULT 0,
+    current_question_started_at TIMESTAMPTZ,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -51,6 +54,7 @@ CREATE TABLE IF NOT EXISTS room_players (
     user_id UUID REFERENCES users(id),
     is_ready BOOLEAN DEFAULT FALSE,
     score INTEGER DEFAULT 0,
+    streak INTEGER DEFAULT 0,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(room_id, user_id)
 );
