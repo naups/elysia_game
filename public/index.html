@@ -759,6 +759,7 @@
             let wsQueue = [];
             let roomPollingInterval = null;
             let transitionCountdownTimer = null;
+            let waitingRecoveryTimer = null;
 
             // ═══════════════════════════════════════════════════════════
             //  SCREEN MANAGEMENT
@@ -852,6 +853,7 @@
             }
 
             function clearRoomReference() {
+                clearWaitingRecoveryTimer();
                 currentRoomCode = null;
                 roomMasterId = null;
                 localStorage.removeItem("roomCode");
@@ -1023,6 +1025,7 @@
                             wsQueue.push({
                                 type: "join_room",
                                 roomCode: savedRoom,
+                                token: authToken,
                             });
                         }
                         // Flush queue
@@ -1095,6 +1098,7 @@
                     case "user_disconnected":
                         break;
                     case "game_started":
+                        clearWaitingRecoveryTimer();
                         questionOrder = 0;
                         totalQuestions = data.totalQuestions;
                         resultMode = data.resultMode;
@@ -1104,18 +1108,7 @@
                         break;
                     case "next_question":
                         stopTransitionCountdown();
-                        // Skip if REST response already handled transition
-                        if (
-                            document.getElementById("quizScreen").style
-                                .display !== "none"
-                        ) {
-                            // Already on quiz screen — check if this is a new question
-                            if (data.questionNumber !== questionOrder) {
-                                handleNextQuestion(data);
-                            }
-                        } else {
-                            handleNextQuestion(data);
-                        }
+                        handleNextQuestion(data);
                         break;
                     case "question_transition_scheduled":
                         startTransitionCountdown(data);
@@ -1125,7 +1118,16 @@
                         break;
                     case "game_over":
                         stopTransitionCountdown();
-                        showSummary(data.summary);
+                        clearWaitingRecoveryTimer();
+                        if (
+                            currentRoomCode &&
+                            (document.getElementById("quizScreen").style
+                                .display !== "none" ||
+                                document.getElementById("loadingScreen").style
+                                    .display !== "none")
+                        ) {
+                            showSummary(data.summary);
+                        }
                         break;
                     case "error":
                         console.error("WS error:", data.message);
@@ -1138,6 +1140,7 @@
             // ═══════════════════════════════════════════════════════════
 
             function enterLobby() {
+                clearWaitingRecoveryTimer();
                 document.getElementById("userAvatar").src =
                     currentUser.avatar ||
                     `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(currentUser.username)}`;
@@ -1252,6 +1255,7 @@
                         wsSend({
                             type: "join_room",
                             roomCode: currentRoomCode,
+                            token: authToken,
                         });
                         showRoomScreen(data.room);
                     } else {
@@ -1279,7 +1283,11 @@
                     if (data.success) {
                         persistRoomCode(code);
                         isMaster = data.room.masterId === currentUser.id;
-                        wsSend({ type: "join_room", roomCode: code });
+                        wsSend({
+                            type: "join_room",
+                            roomCode: code,
+                            token: authToken,
+                        });
                         showRoomScreen(data.room);
                     } else {
                         errEl.textContent = data.message;
@@ -1298,7 +1306,11 @@
                             `/api/rooms/${currentRoomCode}/leave`,
                         );
                     } catch (_) {}
-                    wsSend({ type: "leave_room" });
+                    wsSend({
+                        type: "leave_room",
+                        roomCode: currentRoomCode,
+                        token: authToken,
+                    });
                     clearRoomReference();
                     enterLobby();
                 }
@@ -1406,10 +1418,19 @@
                     roomMasterId = data.room.masterId;
                     isMaster = data.room.masterId === currentUser.id;
                     persistRoomCode(data.room.code);
-                    wsSend({ type: "join_room", roomCode: data.room.code });
+                    wsSend({
+                        type: "join_room",
+                        roomCode: data.room.code,
+                        token: authToken,
+                    });
 
                     if (data.finished && data.summary) {
-                        showSummary(data.summary);
+                        if (isCurrentUserRoomParticipant(data.room)) {
+                            showSummary(data.summary);
+                        } else {
+                            clearRoomReference();
+                            enterLobby();
+                        }
                         return true;
                     }
 
@@ -1438,6 +1459,7 @@
                                         "answerQueue",
                                     ).textContent =
                                         "Waiting for other players...";
+                                    startWaitingRecoveryTimer();
                                 }
                             }, 100);
                         }
@@ -1595,6 +1617,7 @@
 
             function handleNextQuestion(data) {
                 stopTransitionCountdown();
+                clearWaitingRecoveryTimer();
                 questionOrder = data.questionNumber;
                 totalQuestions = data.totalQuestions;
                 resultMode = data.resultMode;
@@ -1621,6 +1644,104 @@
                     `Question ${questionOrder}/${totalQuestions}`;
                 showScreen("quizScreen");
                 displayQuestion();
+            }
+
+            function isCurrentUserRoomParticipant(room) {
+                return Boolean(
+                    currentUser &&
+                        room?.players?.some(
+                            (player) =>
+                                player.userId === currentUser.id ||
+                                player.id === currentUser.id,
+                        ),
+                );
+            }
+
+            function clearWaitingRecoveryTimer() {
+                if (waitingRecoveryTimer) {
+                    clearTimeout(waitingRecoveryTimer);
+                    waitingRecoveryTimer = null;
+                }
+            }
+
+            function startWaitingRecoveryTimer() {
+                if (waitingRecoveryTimer) return;
+
+                const queue = document.getElementById("answerQueue");
+                if (
+                    !currentRoomCode ||
+                    !currentUser ||
+                    document.getElementById("quizScreen").style.display ===
+                        "none" ||
+                    queue?.textContent !== "Waiting for other players..."
+                ) {
+                    return;
+                }
+
+                const roomCode = currentRoomCode;
+                const waitingQuestionOrder = questionOrder;
+
+                waitingRecoveryTimer = setTimeout(async () => {
+                    waitingRecoveryTimer = null;
+                    const currentQueue = document.getElementById("answerQueue");
+                    if (
+                        currentRoomCode !== roomCode ||
+                        document.getElementById("quizScreen").style.display ===
+                            "none" ||
+                        currentQueue?.textContent !==
+                            "Waiting for other players..."
+                    ) {
+                        return;
+                    }
+
+                    try {
+                        const data = await api(
+                            "GET",
+                            `/api/rooms/${roomCode}/state`,
+                        );
+                        if (!data.success || !data.room) return;
+                        if (!isCurrentUserRoomParticipant(data.room)) {
+                            clearRoomReference();
+                            enterLobby();
+                            return;
+                        }
+
+                        if (data.finished && data.summary) {
+                            showSummary(data.summary);
+                            return;
+                        }
+
+                        if (!data.inGame || !data.gameState) return;
+
+                        if (
+                            data.gameState.questionNumber >
+                            waitingQuestionOrder
+                        ) {
+                            handleNextQuestion({
+                                questions: data.gameState.questions,
+                                questionNumber: data.gameState.questionNumber,
+                                totalQuestions: data.gameState.totalQuestions,
+                                resultMode: data.gameState.resultMode,
+                            });
+                            return;
+                        }
+
+                        if (
+                            data.gameState.questionNumber ===
+                                waitingQuestionOrder &&
+                            data.gameState.transition
+                        ) {
+                            startTransitionCountdown(
+                                data.gameState.transition,
+                            );
+                            return;
+                        }
+
+                        startWaitingRecoveryTimer();
+                    } catch (_) {
+                        startWaitingRecoveryTimer();
+                    }
+                }, 10000);
             }
 
             function displayQuestion() {
@@ -1651,6 +1772,7 @@
 
             function startTransitionCountdown(data) {
                 stopTransitionCountdown();
+                clearWaitingRecoveryTimer();
                 const queue = document.getElementById("answerQueue");
                 if (!queue) return;
                 const advanceTime = Date.parse(data.advanceAt);
@@ -1738,6 +1860,7 @@
                         // Waiting for other players
                         document.getElementById("answerQueue").textContent =
                             "Waiting for other players...";
+                        startWaitingRecoveryTimer();
                     }
                 } catch (e) {
                     console.error("Answer error:", e);
@@ -1788,6 +1911,7 @@
             function showSummary(summary) {
                 stopRoomPolling();
                 stopTransitionCountdown();
+                clearWaitingRecoveryTimer();
                 if (currentRoomCode) persistRoomCode(currentRoomCode);
                 showScreen("summaryScreen");
                 showScoreBar(false);
@@ -1974,6 +2098,11 @@
             function backToLobby() {
                 stopRoomPolling();
                 stopTransitionCountdown();
+                clearWaitingRecoveryTimer();
+                clearRoomReference();
+                document.getElementById("winnerCard").innerHTML = "";
+                document.getElementById("rankingBody").innerHTML = "";
+                document.getElementById("detailSection").innerHTML = "";
                 currentQuestion = null;
                 questionOrder = 0;
                 enterLobby();

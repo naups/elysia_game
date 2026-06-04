@@ -22,16 +22,44 @@ const testPool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 let BASE = "http://localhost:3456";
 let serverProcess = null;
+let serverPort = 3456;
 
 // ── Start server for testing ──────────────────────────────────────
 beforeAll(async () => {
+  serverPort = 3456 + Math.floor(Math.random() * 1000);
+  BASE = `http://localhost:${serverPort}`;
   serverProcess = Bun.spawn(["bun", "run", "server.js"], {
     cwd: import.meta.dir,
-    env: { ...process.env, PORT: "3456" },
+    env: { ...process.env, PORT: String(serverPort) },
     stdout: "pipe",
     stderr: "pipe",
   });
-  await new Promise((r) => setTimeout(r, 2000));
+
+  const exited = serverProcess.exited.then((code) => ({
+    type: "exited",
+    code,
+  }));
+  const ready = (async () => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      try {
+        await fetch(`${BASE}/api/auth/validate`);
+        return { type: "ready" };
+      } catch {
+        await wait(100);
+      }
+    }
+    return { type: "timeout" };
+  })();
+
+  const result = await Promise.race([ready, exited]);
+  if (result.type !== "ready") {
+    const stderr = serverProcess.stderr
+      ? await new Response(serverProcess.stderr).text()
+      : "";
+    throw new Error(
+      `Test server failed to start on port ${serverPort}: ${result.type} ${result.code ?? ""}\n${stderr}`,
+    );
+  }
 });
 
 afterAll(async () => {
@@ -59,6 +87,73 @@ async function registerUser(username) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createTrackedSocket() {
+  const ws = new WebSocket(`${BASE.replace(/^http/, "ws")}/ws`);
+  const messages = [];
+  const waiters = [];
+
+  const opened = new Promise((resolve, reject) => {
+    ws.addEventListener("open", resolve, { once: true });
+    ws.addEventListener(
+      "error",
+      () => reject(new Error("WebSocket failed to open")),
+      { once: true },
+    );
+  });
+
+  ws.addEventListener("message", (event) => {
+    const data = JSON.parse(event.data);
+    messages.push(data);
+
+    for (let index = waiters.length - 1; index >= 0; index--) {
+      const waiter = waiters[index];
+      if (waiter.predicate(data)) {
+        waiters.splice(index, 1);
+        clearTimeout(waiter.timeout);
+        waiter.resolve(data);
+      }
+    }
+  });
+
+  function waitFor(predicate, label, timeoutMs = 5000) {
+    const existing = messages.find(predicate);
+    if (existing) return Promise.resolve(existing);
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        const index = waiters.findIndex((waiter) => waiter.resolve === resolve);
+        if (index >= 0) waiters.splice(index, 1);
+        reject(
+          new Error(
+            `Timed out waiting for ${label}. Messages: ${JSON.stringify(messages)}`,
+          ),
+        );
+      }, timeoutMs);
+
+      waiters.push({ predicate, resolve, timeout });
+    });
+  }
+
+  return { ws, opened, waitFor };
+}
+
+async function connectRoomSocket(token, roomCode) {
+  const socket = createTrackedSocket();
+  await socket.opened;
+  socket.ws.send(JSON.stringify({ type: "auth", token }));
+  await socket.waitFor((message) => message.type === "auth_ok", "auth_ok");
+  socket.ws.send(JSON.stringify({ type: "join_room", roomCode, token }));
+  await socket.waitFor(
+    (message) => message.type === "room_joined" && message.roomCode === roomCode,
+    "room_joined",
+  );
+  return socket;
+}
+
+function closeTrackedSocket(socket) {
+  if (socket?.ws && socket.ws.readyState < 2) socket.ws.close();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -614,6 +709,110 @@ describe("Room Management", () => {
     );
     expect(afterDelay.json.gameState.questionNumber).toBe(2);
     expect(afterDelay.json.gameState.questions.all.text).toBe("Second question");
+  });
+
+  test("broadcasts transition and next question websocket messages to every player", async () => {
+    const { json: created } = await api(
+      "POST",
+      "/api/rooms",
+      {
+        maxPlayers: 2,
+        questionCount: 2,
+        questionSource: "custom",
+        questionDelaySeconds: 1,
+        customQuestions: [
+          {
+            text: "Socket first question",
+            options: ["A", "B", "C", "D"],
+            correct_answer: "A",
+          },
+          {
+            text: "Socket second question",
+            options: ["A", "B", "C", "D"],
+            correct_answer: "B",
+          },
+        ],
+      },
+      master.token,
+    );
+    const code = created.room.code;
+    await api("POST", `/api/rooms/${code}/join`, null, player1.token);
+    await api("POST", `/api/rooms/${code}/ready`, null, player1.token);
+
+    const masterSocket = await connectRoomSocket(master.token, code);
+    const playerSocket = await connectRoomSocket(player1.token, code);
+
+    try {
+      const started = await api(
+        "POST",
+        `/api/rooms/${code}/start`,
+        null,
+        master.token,
+      );
+      expect(started.json.success).toBe(true);
+
+      await Promise.all([
+        masterSocket.waitFor(
+          (message) => message.type === "game_started",
+          "master game_started",
+        ),
+        playerSocket.waitFor(
+          (message) => message.type === "game_started",
+          "player game_started",
+        ),
+      ]);
+
+      await api(
+        "POST",
+        `/api/rooms/${code}/answer`,
+        { answer: "A", questionOrder: 1 },
+        master.token,
+      );
+      const lastAnswer = await api(
+        "POST",
+        `/api/rooms/${code}/answer`,
+        { answer: "A", questionOrder: 1 },
+        player1.token,
+      );
+      expect(lastAnswer.json.success).toBe(true);
+      expect(lastAnswer.json.nextQuestionScheduled).toBe(true);
+
+      const transitions = await Promise.all([
+        masterSocket.waitFor(
+          (message) =>
+            message.type === "question_transition_scheduled" &&
+            message.questionNumber === 1 &&
+            message.nextQuestionNumber === 2,
+          "master transition",
+        ),
+        playerSocket.waitFor(
+          (message) =>
+            message.type === "question_transition_scheduled" &&
+            message.questionNumber === 1 &&
+            message.nextQuestionNumber === 2,
+          "player transition",
+        ),
+      ]);
+      expect(transitions.every((message) => message.gameOver === false)).toBe(true);
+
+      const nextQuestions = await Promise.all([
+        masterSocket.waitFor(
+          (message) =>
+            message.type === "next_question" && message.questionNumber === 2,
+          "master next_question",
+        ),
+        playerSocket.waitFor(
+          (message) =>
+            message.type === "next_question" && message.questionNumber === 2,
+          "player next_question",
+        ),
+      ]);
+      expect(nextQuestions[0].questions.all.text).toBe("Socket second question");
+      expect(nextQuestions[1].questions.all.text).toBe("Socket second question");
+    } finally {
+      closeTrackedSocket(masterSocket);
+      closeTrackedSocket(playerSocket);
+    }
   });
 });
 

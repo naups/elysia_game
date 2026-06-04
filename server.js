@@ -15,6 +15,8 @@ const roomConnections = new Map();
 const roomAdvanceTimers = new Map();
 // Map<token, { userId, expiresAt }>
 const activeSessions = new Map();
+// Map<socketId, { userId, username, roomCode }>
+const socketStates = new Map();
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{2,50}$/;
 const DEFAULT_ROOM_SETTINGS = {
   max_players: 6,
@@ -48,6 +50,57 @@ function getAvatarUrl(username) {
 
 function getBearerToken(headers) {
   return headers["authorization"]?.replace(/^Bearer\s+/i, "") || "";
+}
+
+function getSocketId(ws) {
+  return ws.raw ?? ws.id ?? ws.data?.id;
+}
+
+function getSocketState(ws) {
+  const socketId = getSocketId(ws);
+  let state = socketStates.get(socketId);
+  if (!state) {
+    state = ws.data?.socketState || {};
+    socketStates.set(socketId, state);
+  }
+  if (ws.data) ws.data.socketState = state;
+  return state;
+}
+
+function removeSocketFromRoom(ws) {
+  const socketId = getSocketId(ws);
+  const state = getSocketState(ws);
+  const code = state?.roomCode;
+  if (!code || !roomConnections.has(code)) return null;
+
+  const conns = roomConnections.get(code);
+  for (const conn of conns) {
+    if (
+      conn.socketId === socketId ||
+      (state.userId && conn.userId === state.userId)
+    ) {
+      conns.delete(conn);
+      break;
+    }
+  }
+  if (conns.size === 0) roomConnections.delete(code);
+
+  state.roomCode = null;
+  return { code, userId: state.userId };
+}
+
+async function authenticateSocketState(ws, token) {
+  const state = getSocketState(ws);
+  if (state.userId) return state;
+  if (!token) return state;
+
+  const userId = await validateSession(token);
+  if (!userId) return state;
+
+  const user = await getUser(userId);
+  state.userId = userId;
+  state.username = user?.username;
+  return state;
 }
 
 function isValidUsername(username) {
@@ -221,8 +274,9 @@ async function broadcastToRoom(roomCode, message, excludeWs = null) {
   const connections = roomConnections.get(roomCode);
   if (!connections) return;
   const data = JSON.stringify(message);
+  const excludedSocketId = excludeWs ? getSocketId(excludeWs) : null;
   for (const conn of connections) {
-    if (conn.ws !== excludeWs && conn.ws.readyState === 1) {
+    if (conn.socketId !== excludedSocketId && conn.ws.readyState === 1) {
       conn.ws.send(data);
     }
   }
@@ -1477,6 +1531,7 @@ app.get("/api/rooms/:code/summary", async ({ headers, params }) => {
 
 app.ws("/ws", {
   async open(ws) {
+    getSocketState(ws);
     // Connection established — waiting for auth message
   },
   async message(ws, raw) {
@@ -1497,14 +1552,16 @@ app.ws("/ws", {
         ws.send(JSON.stringify({ type: "error", message: "Unauthorized" }));
         return;
       }
-      ws.userId = userId;
       const user = await getUser(userId);
-      ws.username = user?.username;
+      const state = getSocketState(ws);
+      state.userId = userId;
+      state.username = user?.username;
       ws.send(JSON.stringify({ type: "auth_ok", userId }));
       return;
     }
 
-    if (!ws.userId) {
+    const state = await authenticateSocketState(ws, token);
+    if (!state?.userId) {
       ws.send(JSON.stringify({ type: "error", message: "Not authenticated" }));
       return;
     }
@@ -1521,7 +1578,7 @@ app.ws("/ws", {
         ws.send(JSON.stringify({ type: "error", message: "Room not found" }));
         return;
       }
-      if (!(await isRoomMember(roomResult.rows[0].id, ws.userId))) {
+      if (!(await isRoomMember(roomResult.rows[0].id, state.userId))) {
         ws.send(JSON.stringify({ type: "error", message: "Forbidden" }));
         return;
       }
@@ -1531,10 +1588,11 @@ app.ws("/ws", {
       }
       roomConnections.get(code).add({
         ws,
-        userId: ws.userId,
-        username: ws.username,
+        socketId: getSocketId(ws),
+        userId: state.userId,
+        username: state.username,
       });
-      ws.roomCode = code;
+      state.roomCode = code;
 
       ws.send(
         JSON.stringify({
@@ -1548,9 +1606,9 @@ app.ws("/ws", {
         code,
         {
           type: "user_connected",
-          userId: ws.userId,
-          username: ws.username,
-          avatar: getAvatarUrl(ws.username),
+          userId: state.userId,
+          username: state.username,
+          avatar: getAvatarUrl(state.username),
         },
         ws,
       );
@@ -1559,21 +1617,14 @@ app.ws("/ws", {
 
     // Leave room channel
     if (type === "leave_room") {
-      const code = ws.roomCode;
-      if (code && roomConnections.has(code)) {
-        const conns = roomConnections.get(code);
-        for (const conn of conns) {
-          if (conn.ws === ws) {
-            conns.delete(conn);
-            break;
-          }
-        }
-        broadcastToRoom(code, {
+      if (!state.roomCode && roomCode) state.roomCode = roomCode.toUpperCase();
+      const left = removeSocketFromRoom(ws);
+      if (left) {
+        broadcastToRoom(left.code, {
           type: "user_disconnected",
-          userId: ws.userId,
+          userId: left.userId,
         });
       }
-      ws.roomCode = null;
       return;
     }
 
@@ -1584,21 +1635,14 @@ app.ws("/ws", {
     }
   },
   close(ws) {
-    // Clean up connections
-    const code = ws.roomCode;
-    if (code && roomConnections.has(code)) {
-      const conns = roomConnections.get(code);
-      for (const conn of conns) {
-        if (conn.ws === ws) {
-          conns.delete(conn);
-          break;
-        }
-      }
-      broadcastToRoom(code, {
+    const left = removeSocketFromRoom(ws);
+    if (left) {
+      broadcastToRoom(left.code, {
         type: "user_disconnected",
-        userId: ws.userId,
+        userId: left.userId,
       });
     }
+    socketStates.delete(getSocketId(ws));
   },
 });
 
