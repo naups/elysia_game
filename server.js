@@ -456,6 +456,14 @@ await ensureDatabaseShape();
 
 async function validateSession(token) {
   if (!token) return null;
+
+  // Secure JWT flow
+  if (getSecureAuthEnabled()) {
+    const payload = verifyJwt(token, getJwtAccessSecret());
+    return payload ? payload.userId : null;
+  }
+
+  // Legacy: database token flow
   // Check in-memory cache first
   const cached = activeSessions.get(token);
   if (cached) {
