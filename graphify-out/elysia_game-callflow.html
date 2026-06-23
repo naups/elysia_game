@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>elysia_game — Complete Call Flow &amp; Architecture Documentation</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --border: #334155;
+  --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+  --warn: #fbbf24; --err: #f87171; --ok: #34d399;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+.container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 2.4rem; margin-bottom: 8px; background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h2 { font-size: 1.7rem; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+h3 { font-size: 1.25rem; margin: 32px 0 12px; color: var(--accent); }
+h4 { font-size: 1.05rem; margin: 20px 0 8px; color: var(--warn); }
+p { margin: 8px 0; color: var(--muted); }
+.subtitle { color: var(--muted); font-size: 1.1rem; margin-bottom: 32px; }
+.mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; overflow-x: auto; position: relative; }
+.mermaid.is-enhanced { padding: 0; overflow: hidden; min-height: 260px; }
+.mermaid-viewport { padding: 54px 24px 24px; overflow: hidden; cursor: grab; touch-action: none; min-height: 260px; }
+.mermaid-viewport.is-dragging { cursor: grabbing; }
+.mermaid-viewport svg { max-width: none !important; height: auto; transform-origin: 0 0; transition: transform 120ms ease; }
+.mermaid-toolbar { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 6px; background: rgba(15,23,42,0.92); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+.mermaid-toolbar button, .mermaid-toolbar .zoom-level { height: 28px; min-width: 32px; border: 1px solid var(--border); border-radius: 6px; background: #1e293b; color: var(--text); font: 600 0.78rem system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; }
+.mermaid-toolbar button { cursor: pointer; }
+.mermaid-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+.mermaid-toolbar .zoom-level { min-width: 52px; color: var(--muted); background: transparent; }
+.call-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92rem; }
+.call-table th { background: #1a2744; color: var(--accent); text-align: left; padding: 10px 14px; border: 1px solid var(--border); }
+.call-table td { padding: 8px 14px; border: 1px solid var(--border); vertical-align: top; }
+.call-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+.tag-async { background: #7c3aed33; color: #a78bfa; }
+.tag-class { background: #05966933; color: var(--ok); }
+.tag-func { background: #2563eb33; color: var(--accent); }
+.tag-cmd { background: #d9770633; color: var(--warn); }
+.tag-endpoint { background: #dc262633; color: var(--err); }
+.tag-hook { background: #db277733; color: #f472b6; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin: 16px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+.arrow-chain { font-family: 'Fira Code', monospace; font-size: 0.85rem; color: var(--accent); padding: 10px; background: rgba(56,189,248,0.06); border-radius: 6px; }
+code { font-family: 'Fira Code', 'Cascadia Code', monospace; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 3px; font-size: 0.88em; }
+ul, ol { margin: 8px 0 8px 24px; color: var(--muted); }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+.nav { position: sticky; top: 0; background: var(--bg); z-index: 10; padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.9rem; }
+.nav a { text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+@media (max-width: 768px) { .container { padding: 16px; } h1 { font-size: 1.8rem; } }
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>elysia_game — Complete Call Flow &amp; Architecture Documentation</h1>
+<p class="subtitle">Generated from graphify knowledge graph: 113 nodes, 172 edges, 16 communities. Commit: ba9c9e8</p>
+
+<div class="nav">
+    <a href="#overview">Architecture Overview</a>
+    <a href="#build-graph">Graph Build</a>
+    <a href="#outputs-docs">Outputs &amp; Docs</a>
+    <a href="#serve-api">Serving API</a>
+    <a href="#tests-fixtures">Tests &amp; Fixtures</a>
+    <a href="#serverjs-roomconnections-roomadvancetimers">Serverjs Roomconnections Roomadvancetimers</a>
+    <a href="#serverjs-clearroomadvancetimer-broadcasttoroom">Serverjs Clearroomadvancetimer Broadcasttoroom</a>
+    <a href="#serverjs-getavatarurl-validatesession">Serverjs Getavatarurl Validatesession</a>
+    <a href="#serverjs-clampinteger-getquestiondelayseconds">Serverjs Clampinteger Getquestiondelayseconds</a>
+    <a href="#migratejs-pool-migrations">Migratejs Pool Migrations</a>
+    <a href="#serverjs-withdefaultroomsettings-getroomstate">Serverjs Withdefaultroomsettings Getroomstate</a>
+    <a href="#databasejs-pool">Databasejs Pool</a>
+    <a href="#migrate2js-pool">Migrate2Js Pool</a>
+    <a href="#postgresql-pool-databasejs">Postgresql Pool Databasejs</a>
+</div>
+
+<!-- ====== Architecture Overview ====== -->
+<h2 id="overview">1. Architecture Overview</h2>
+
+<div class="mermaid">
+
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    BUILD_GRAPH_321CBB04("Graph Build<br/><small>47 nodes</small>")
+    class BUILD_GRAPH_321CBB04 module;
+    OUTPUTS_DOCS_ED82387C("Outputs &amp; Docs<br/><small>10 nodes</small>")
+    class OUTPUTS_DOCS_ED82387C module;
+    SERVE_API_35EC8E86("Serving API<br/><small>10 nodes</small>")
+    class SERVE_API_35EC8E86 module;
+    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>5 nodes</small>")
+    class TESTS_FIXTURES_B84B1DCC module;
+    SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D("Serverjs Roomconnections Roomadvancetimers<br/><small>15 nodes</small>")
+    class SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D module;
+    SERVERJS_CLEARROOMADVANCETIMER_BROADCASTTOROOM_F0B28ABF("Serverjs Clearroomadvancetimer Broadcasttoroom<br/><small>6 nodes</small>")
+    class SERVERJS_CLEARROOMADVANCETIMER_BROADCASTTOROOM_F0B28ABF module;
+    SERVERJS_GETAVATARURL_VALIDATESESSION_03D424F9("Serverjs Getavatarurl Validatesession<br/><small>5 nodes</small>")
+    class SERVERJS_GETAVATARURL_VALIDATESESSION_03D424F9 module;
+    SERVERJS_CLAMPINTEGER_GETQUESTIONDELAYSECONDS_FD33F497("Serverjs Clampinteger Getquestiondelayseconds<br/><small>4 nodes</small>")
+    class SERVERJS_CLAMPINTEGER_GETQUESTIONDELAYSECONDS_FD33F497 module;
+    MIGRATEJS_POOL_MIGRATIONS_BC02752C("Migratejs Pool Migrations<br/><small>3 nodes</small>")
+    class MIGRATEJS_POOL_MIGRATIONS_BC02752C module;
+    SERVERJS_WITHDEFAULTROOMSETTINGS_GETROOMSTATE_5D44DE6B("Serverjs Withdefaultroomsettings Getroomstate<br/><small>3 nodes</small>")
+    class SERVERJS_WITHDEFAULTROOMSETTINGS_GETROOMSTATE_5D44DE6B module;
+    DATABASEJS_POOL_B606B939("Databasejs Pool<br/><small>2 nodes</small>")
+    class DATABASEJS_POOL_B606B939 module;
+    MIGRATE2JS_POOL_6FC82610("Migrate2Js Pool<br/><small>2 nodes</small>")
+    class MIGRATE2JS_POOL_6FC82610 module;
+    POSTGRESQL_POOL_DATABASEJS_B8BA54AB("Postgresql Pool Databasejs<br/><small>1 nodes</small>")
+    class POSTGRESQL_POOL_DATABASEJS_B8BA54AB module;
+    SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D -->|contains x6| SERVERJS_CLEARROOMADVANCETIMER_BROADCASTTOROOM_F0B28ABF
+    SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D -->|contains x5| SERVERJS_GETAVATARURL_VALIDATESESSION_03D424F9
+    SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D -->|contains x4| SERVERJS_CLAMPINTEGER_GETQUESTIONDELAYSECONDS_FD33F497
+    BUILD_GRAPH_321CBB04 -->|shares data with x4| OUTPUTS_DOCS_ED82387C
+    OUTPUTS_DOCS_ED82387C -->|calls x4| BUILD_GRAPH_321CBB04
+    SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D -->|contains x3| SERVERJS_WITHDEFAULTROOMSETTINGS_GETROOMSTATE_5D44DE6B
+    BUILD_GRAPH_321CBB04 -->|shares data with x3| SERVE_API_35EC8E86
+    SERVE_API_35EC8E86 -->|implements x2| BUILD_GRAPH_321CBB04
+    SERVE_API_35EC8E86 -->|implements x2| OUTPUTS_DOCS_ED82387C
+    DATABASEJS_POOL_B606B939 -->|imports| SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D
+    SERVERJS_ROOMCONNECTIONS_ROOMADVANCETIMERS_26E7877D -->|contains| BUILD_GRAPH_321CBB04
+    SERVERJS_CLAMPINTEGER_GETQUESTIONDELAYSECONDS_FD33F497 -->|calls| SERVERJS_CLEARROOMADVANCETIMER_BROADCASTTOROOM_F0B28ABF
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h4>Architecture Layers</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>Layer</th><th>Nodes</th><th>Communities</th></tr>
+      <tr><td>Graph Build</td><td>47</td><td><code>0, 1, 5, 6</code></td></tr><tr><td>Outputs &amp; Docs</td><td>10</td><td><code>4</code></td></tr><tr><td>Serving API</td><td>10</td><td><code>3</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>5</td><td><code>9</code></td></tr><tr><td>Serverjs Roomconnections Roomadvancetimers</td><td>15</td><td><code>2</code></td></tr><tr><td>Serverjs Clearroomadvancetimer Broadcasttoroom</td><td>6</td><td><code>7</code></td></tr><tr><td>Serverjs Getavatarurl Validatesession</td><td>5</td><td><code>8</code></td></tr><tr><td>Serverjs Clampinteger Getquestiondelayseconds</td><td>4</td><td><code>10</code></td></tr><tr><td>Migratejs Pool Migrations</td><td>3</td><td><code>11</code></td></tr><tr><td>Serverjs Withdefaultroomsettings Getroomstate</td><td>3</td><td><code>12</code></td></tr><tr><td>Databasejs Pool</td><td>2</td><td><code>13</code></td></tr><tr><td>Migrate2Js Pool</td><td>2</td><td><code>14</code></td></tr><tr><td>Postgresql Pool Databasejs</td><td>1</td><td><code>15</code></td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Core Flow</h4>
+    <div class="arrow-chain">Tests &amp; Fixtures -&gt; Graph Build -&gt; Outputs &amp; Docs -&gt; Serving API -&gt; Serverjs Roomconnections Roomadvancetimers -&gt; Serverjs Clearroomadvancetimer Broadcasttoroom -&gt; Serverjs Getavatarurl Validatesession</div>
+  </div>
+</div>
+<div class="grid">
+  <div class="card">
+    <h4>Graph Report Highlights</h4>
+    <ul>
+      <li>113 nodes · 172 edges · 16 communities (12 shown, 4 thin omitted)</li>
+      <li>Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 2 edges (avg confidence: 0.86)</li>
+      <li>Token cost: 0 input · 0 output</li>
+      <li>1. `Users Table` - 8 edges</li>
+      <li>2. `Rooms Table` - 8 edges</li>
+      <li>3. `Room Questions Table` - 8 edges</li>
+    </ul>
+  </div>
+</div>
+<hr>
+<!-- ====== 2. Graph Build ====== -->
+<h2 id="build-graph">2. Graph Build</h2>
+<p>Graph Build groups implementation around packagejson, room, serverjs, table, mostly in package.json, server.js, schema.sql. This section covers 47 nodes and 71 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Graph Build (47 nodes, 71 edges)
+    subgraph build_graph_package_json_4e40bfbd["package.json"]
+        package_dependencies_elysiajs_cors_f533db5e("@elysiajs/cors<br/><small>package.json</small>")
+        package_dependencies_elysiajs_static_7cfec808("@elysiajs/static<br/><small>package.json</small>")
+        package_dependencies_elysiajs_websocket_ce9dc8ba("@elysiajs/websocket<br/><small>package.json</small>")
+        package_author_4fa6ee59("author<br/><small>package.json</small>")
+        package_devdependencies_bun_types_c77e1ce7("bun-types<br/><small>package.json</small>")
+        package_dependencies_c512ca5e("dependencies<br/><small>package.json</small>")
+        package_description_1bccacf3("description<br/><small>package.json</small>")
+        package_scripts_dev_8c0c97d3("dev<br/><small>package.json</small>")
+        package_devdependencies_ff8711cc("devDependencies<br/><small>package.json</small>")
+        package_dependencies_dotenv_27698e94("dotenv<br/><small>package.json</small>")
+        package_dependencies_elysia_84971efe("elysia<br/><small>package.json</small>")
+        package_keywords_cbe22ea7("keywords<br/><small>package.json</small>")
+    end
+    subgraph build_graph_server_js_5f9f1c3b["server.js"]
+        server_get_room_state_19743312("getRoomState<br/><small>server.js</small>")
+        server_start_room_endpoint_a28d695c("POST /api/rooms/:code/start<br/><small>server.js</small>")
+        server_get_questions_for_room_fa39f81c("getQuestionsForRoom<br/><small>server.js</small>")
+        server_room_state_endpoint_79b141cc("GET /api/rooms/:code/state<br/><small>server.js</small>")
+    end
+    migrate_room_schema_migrations_ae6f6e79("Room Schema Migrations<br/><small>migrate.js</small>")
+    migrate2_room_flow_migration_2a32f1df("Room Flow Migration<br/><small>migrate2.js</small>")
+    server_get_room_state_19743312 -->|calls| server_room_state_endpoint_79b141cc
+    server_start_room_endpoint_a28d695c -->|calls| server_get_questions_for_room_fa39f81c
+    server_get_questions_for_room_fa39f81c -->|calls| server_room_state_endpoint_79b141cc
+    %% Omitted for readability: 29 nodes, 0 edges
+    class package_dependencies_elysiajs_cors_f533db5e function;
+    class package_dependencies_elysiajs_static_7cfec808 function;
+    class package_dependencies_elysiajs_websocket_ce9dc8ba function;
+    class package_author_4fa6ee59 function;
+    class package_devdependencies_bun_types_c77e1ce7 function;
+    class package_dependencies_c512ca5e function;
+    class package_description_1bccacf3 function;
+    class package_scripts_dev_8c0c97d3 function;
+    class package_devdependencies_ff8711cc function;
+    class package_dependencies_dotenv_27698e94 function;
+    class package_dependencies_elysia_84971efe function;
+    class package_keywords_cbe22ea7 function;
+    class server_get_room_state_19743312 function;
+    class server_start_room_endpoint_a28d695c api;
+    class server_get_questions_for_room_fa39f81c function;
+    class server_room_state_endpoint_79b141cc api;
+    class migrate_room_schema_migrations_ae6f6e79 klass;
+    class migrate2_room_flow_migration_2a32f1df klass;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>DEFAULT_ROOM_SETTINGS</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>DEFAULT_ROOM_SETTINGS node in server.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>Room Schema Migrations</code><br><small style="color:var(--muted)">migrate.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Schema Migrations node in migrate.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>Room Flow Migration</code><br><small style="color:var(--muted)">migrate2.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Flow Migration node in migrate2.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>Users Table</code><br><small style="color:var(--muted)">schema.sql</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Users Table node in schema.sql.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>Sessions Table</code><br><small style="color:var(--muted)">schema.sql</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Sessions Table node in schema.sql.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>Rooms Table</code><br><small style="color:var(--muted)">schema.sql</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Rooms Table node in schema.sql.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>Room Players Table</code><br><small style="color:var(--muted)">schema.sql</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Players Table node in schema.sql.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>Room Questions Table</code><br><small style="color:var(--muted)">schema.sql</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Questions Table node in schema.sql.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>Room Answers Table</code><br><small style="color:var(--muted)">schema.sql</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Answers Table node in schema.sql.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>getRoomState</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>GET /api/rooms/:code/state</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>getRoomState node in server.js.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>POST /api/rooms</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>POST /api/rooms node in server.js.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>POST /api/rooms/:code/start</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getQuestionsForRoom</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>POST /api/rooms/:code/start node in server.js.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>getQuestionsForRoom</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>POST /api/rooms/:code/start</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><code>GET /api/rooms/:code/state</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>getQuestionsForRoom node in server.js.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>GET /api/rooms/:code/state</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td><code>getQuestionsForRoom</code><br><small style="color:var(--muted)">server.js</small><br><code>getRoomState</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>GET /api/rooms/:code/state node in server.js.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>POST /api/rooms/:code/answer</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>POST /api/rooms/:code/answer node in server.js.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>Room Code Persistence</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Code Persistence node in public/index.html.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>Room Management Client</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-cmd">Entry</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Management Client node in public/index.html.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>Multiplayer Quiz UI</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Multiplayer Quiz UI node in public/index.html.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>Room Management Tests</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>package.json</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>package.json node in package.json.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>name</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>name node in package.json.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>version</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>version node in package.json.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>description</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>description node in package.json.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>main</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>main node in package.json.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>scripts</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>scripts node in package.json.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>start</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>start node in package.json.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>dev</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>dev node in package.json.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>test</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>test:verbose</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>keywords</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>keywords node in package.json.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>package.json</code></td><td>22 nodes</td></tr>
+<tr><td><code>server.js</code></td><td>9 nodes</td></tr>
+<tr><td><code>schema.sql</code></td><td>8 nodes</td></tr>
+<tr><td><code>public/index.html</code></td><td>4 nodes</td></tr>
+<tr><td><code>server.test.js</code></td><td>2 nodes</td></tr>
+<tr><td><code>migrate.js</code></td><td>1 nodes</td></tr>
+<tr><td><code>migrate2.js</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: shares data with x24, references x23, contains x21, calls x3. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 3. Outputs & Docs ====== -->
+<h2 id="outputs-docs">3. Outputs &amp; Docs</h2>
+<p>Outputs &amp; Docs groups implementation around serverjs, room, public, indexhtml, mostly in server.js, public/index.html. This section covers 10 nodes and 11 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Outputs &amp; Docs (10 nodes, 11 edges)
+    subgraph outputs_docs_server_js_c0b19cc4["server.js"]
+        server_broadcast_to_room_e3ea2266("broadcastToRoom<br/><small>server.js</small>")
+        server_build_room_summary_ad9ee9b2("buildRoomSummary<br/><small>server.js</small>")
+        server_schedule_room_advance_7b81ff55("scheduleRoomAdvance<br/><small>server.js</small>")
+        server_end_game_6a32899e("endGame<br/><small>server.js</small>")
+        server_websocket_channel_e37baab6("WebSocket /ws Room Channel<br/><small>server.js</small>")
+        server_room_advance_timers_3cb1fd7b("Room Advance Timers Map<br/><small>server.js</small>")
+        server_room_connections_52dbb2e4("Room Connections Map<br/><small>server.js</small>")
+    end
+    subgraph outputs_docs_public_index_html_1ba11f94["public/index.html"]
+        index_summary_ui_90af1ed3("Summary UI<br/><small>public/index.html</small>")
+        index_transition_countdown_0b2ec347("Transition Countdown UI<br/><small>public/index.html</small>")
+        index_websocket_client_9144d0f2("WebSocket Client<br/><small>public/index.html</small>")
+    end
+    server_broadcast_to_room_e3ea2266 -->|calls| server_end_game_6a32899e
+    server_broadcast_to_room_e3ea2266 -->|calls| server_schedule_room_advance_7b81ff55
+    server_broadcast_to_room_e3ea2266 -->|calls| server_websocket_channel_e37baab6
+    server_schedule_room_advance_7b81ff55 -->|calls| server_end_game_6a32899e
+    server_build_room_summary_ad9ee9b2 -->|calls| server_end_game_6a32899e
+    class server_broadcast_to_room_e3ea2266 function;
+    class server_build_room_summary_ad9ee9b2 function;
+    class server_schedule_room_advance_7b81ff55 function;
+    class server_end_game_6a32899e function;
+    class server_websocket_channel_e37baab6 klass;
+    class server_room_advance_timers_3cb1fd7b klass;
+    class server_room_connections_52dbb2e4 klass;
+    class index_summary_ui_90af1ed3 klass;
+    class index_transition_countdown_0b2ec347 klass;
+    class index_websocket_client_9144d0f2 entry;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>Room Connections Map</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Connections Map node in server.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>Room Advance Timers Map</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Room Advance Timers Map node in server.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>broadcastToRoom</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>endGame</code><br><small style="color:var(--muted)">server.js</small><br><code>scheduleRoomAdvance</code><br><small style="color:var(--muted)">server.js</small><br><code>WebSocket /ws Room Channel</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>broadcastToRoom node in server.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>scheduleRoomAdvance</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>broadcastToRoom</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><code>endGame</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>scheduleRoomAdvance node in server.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>buildRoomSummary</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>endGame</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>buildRoomSummary node in server.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>endGame</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>broadcastToRoom</code><br><small style="color:var(--muted)">server.js</small><br><code>buildRoomSummary</code><br><small style="color:var(--muted)">server.js</small><br><code>scheduleRoomAdvance</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>endGame node in server.js.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>WebSocket /ws Room Channel</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>broadcastToRoom</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>WebSocket /ws Room Channel node in server.js.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>WebSocket Client</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-cmd">Entry</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>WebSocket Client node in public/index.html.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>Transition Countdown UI</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Transition Countdown UI node in public/index.html.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>Summary UI</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Summary UI node in public/index.html.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.js</code></td><td>7 nodes</td></tr>
+<tr><td><code>public/index.html</code></td><td>3 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: shares data with x5, calls x5, references x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 4. Serving API ====== -->
+<h2 id="serve-api">4. Serving API</h2>
+<p>Serving API groups implementation around serverjs, api, elysia, post, mostly in server.js, public/index.html, package.json. This section covers 10 nodes and 12 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serving API (10 nodes, 12 edges)
+    subgraph serve_api_server_js_bcdd09c7["server.js"]
+        server_validate_session_b293eeec("validateSession<br/><small>server.js</small>")
+        server_auth_validate_endpoint_b5dd90ee("GET /api/auth/validate<br/><small>server.js</small>")
+        server_active_sessions_265486df("Active Sessions Cache<br/><small>server.js</small>")
+        server_elysia_app_963ae659("Elysia Server Application<br/><small>server.js</small>")
+        server_logout_endpoint_b064e800("POST /api/logout<br/><small>server.js</small>")
+        server_register_endpoint_96c4c705("POST /api/register<br/><small>server.js</small>")
+    end
+    subgraph serve_api_public_index_html_b4f43f66["public/index.html"]
+        index_auth_ui_dbac66cf("Authentication UI Flow<br/><small>public/index.html</small>")
+        index_spa_shell_57259a2d("Trivia Quiz SPA Shell<br/><small>public/index.html</small>")
+    end
+    package_bun_elysia_project_cacceb18("Bun Elysia Project Configuration<br/><small>package.json</small>")
+    server_test_auth_tests_ceb3fd73("Authentication Tests<br/><small>server.test.js</small>")
+    server_validate_session_b293eeec -->|calls| server_auth_validate_endpoint_b5dd90ee
+    class server_validate_session_b293eeec function;
+    class server_auth_validate_endpoint_b5dd90ee api;
+    class server_active_sessions_265486df klass;
+    class server_elysia_app_963ae659 klass;
+    class server_logout_endpoint_b064e800 api;
+    class server_register_endpoint_96c4c705 api;
+    class index_auth_ui_dbac66cf klass;
+    class index_spa_shell_57259a2d concept;
+    class package_bun_elysia_project_cacceb18 klass;
+    class server_test_auth_tests_ceb3fd73 test;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>Bun Elysia Project Configuration</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>Elysia Server Application</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Elysia Server Application node in server.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>Active Sessions Cache</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Caches analysis results or computes cache keys.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>validateSession</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>GET /api/auth/validate</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>validateSession node in server.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>POST /api/register</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>POST /api/register node in server.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>POST /api/logout</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>POST /api/logout node in server.js.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>GET /api/auth/validate</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td><code>validateSession</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>GET /api/auth/validate node in server.js.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>Trivia Quiz SPA Shell</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Trivia Quiz SPA Shell.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>Authentication UI Flow</code><br><small style="color:var(--muted)">public/index.html</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Authentication UI Flow node in public/index.html.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>Authentication Tests</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.js</code></td><td>6 nodes</td></tr>
+<tr><td><code>public/index.html</code></td><td>2 nodes</td></tr>
+<tr><td><code>package.json</code></td><td>1 nodes</td></tr>
+<tr><td><code>server.test.js</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: references x8, shares data with x2, implements x1, calls x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 5. Tests & Fixtures ====== -->
+<h2 id="tests-fixtures">5. Tests &amp; Fixtures</h2>
+<p>Tests &amp; Fixtures groups implementation around servertestjs, testpool, api, registeruser, mostly in server.test.js. This section covers 5 nodes and 5 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Tests &amp; Fixtures (5 nodes, 5 edges)
+    server_test_api_ef3d4c3e("api()<br/><small>server.test.js</small>")
+    server_test_registeruser_15642bcf("registerUser()<br/><small>server.test.js</small>")
+    server_test_0ce4ab21("server.test.js")
+    server_test_testpool_77ac3faa("testPool<br/><small>server.test.js</small>")
+    server_test_wait_b5a43f13("wait()<br/><small>server.test.js</small>")
+    server_test_api_ef3d4c3e -->|calls| server_test_registeruser_15642bcf
+    class server_test_api_ef3d4c3e test;
+    class server_test_registeruser_15642bcf test;
+    class server_test_0ce4ab21 test;
+    class server_test_testpool_77ac3faa test;
+    class server_test_wait_b5a43f13 test;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>server.test.js</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>testPool</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>api()</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>registerUser()</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td>api() node in server.test.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>registerUser()</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>api()</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>registerUser() node in server.test.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>wait()</code><br><small style="color:var(--muted)">server.test.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>wait() node in server.test.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.test.js</code></td><td>5 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x4, calls x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 6. Serverjs Roomconnections Roomadvancetimers ====== -->
+<h2 id="serverjs-roomconnections-roomadvancetimers">6. Serverjs Roomconnections Roomadvancetimers</h2>
+<p>Serverjs Roomconnections Roomadvancetimers groups implementation around serverjs, roomconnections, roomadvancetimers, activesessions, mostly in server.js. This section covers 15 nodes and 14 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serverjs Roomconnections Roomadvancetimers (15 nodes, 14 edges)
+    server_3de4f901("server.js")
+    server_activesessions_30117b96("activeSessions<br/><small>server.js</small>")
+    server_app_a94c98d7("app<br/><small>server.js</small>")
+    server_ensuredatabaseshape_c6250120("ensureDatabaseShape()<br/><small>server.js</small>")
+    server_generateroomcode_cf3cd417("generateRoomCode()<br/><small>server.js</small>")
+    server_generatetoken_5bb50ffc("generateToken()<br/><small>server.js</small>")
+    server_getbearertoken_68df5305("getBearerToken()<br/><small>server.js</small>")
+    server_getpendingroomtransition_899aa4ca("getPendingRoomTransition()<br/><small>server.js</small>")
+    server_getrandomquestions_62013cfe("getRandomQuestions()<br/><small>server.js</small>")
+    server_isvalidusername_57841438("isValidUsername()<br/><small>server.js</small>")
+    server_normalizeanswer_ebf9c3df("normalizeAnswer()<br/><small>server.js</small>")
+    server_open_065c7d34("open()<br/><small>server.js</small>")
+    server_rollbackandreturn_41866b32("rollbackAndReturn()<br/><small>server.js</small>")
+    server_roomadvancetimers_d241b628("roomAdvanceTimers<br/><small>server.js</small>")
+    server_roomconnections_45cd7c14("roomConnections<br/><small>server.js</small>")
+    server_3de4f901 -->|contains| server_activesessions_30117b96
+    server_3de4f901 -->|contains| server_app_a94c98d7
+    server_3de4f901 -->|contains| server_ensuredatabaseshape_c6250120
+    server_3de4f901 -->|contains| server_generateroomcode_cf3cd417
+    server_3de4f901 -->|contains| server_generatetoken_5bb50ffc
+    server_3de4f901 -->|contains| server_getbearertoken_68df5305
+    server_3de4f901 -->|contains| server_getpendingroomtransition_899aa4ca
+    server_3de4f901 -->|contains| server_getrandomquestions_62013cfe
+    server_3de4f901 -->|contains| server_isvalidusername_57841438
+    server_3de4f901 -->|contains| server_normalizeanswer_ebf9c3df
+    server_3de4f901 -->|contains| server_open_065c7d34
+    server_3de4f901 -->|contains| server_rollbackandreturn_41866b32
+    server_3de4f901 -->|contains| server_roomadvancetimers_d241b628
+    server_3de4f901 -->|contains| server_roomconnections_45cd7c14
+    class server_3de4f901 module;
+    class server_activesessions_30117b96 function;
+    class server_app_a94c98d7 function;
+    class server_ensuredatabaseshape_c6250120 function;
+    class server_generateroomcode_cf3cd417 function;
+    class server_generatetoken_5bb50ffc function;
+    class server_getbearertoken_68df5305 function;
+    class server_getpendingroomtransition_899aa4ca function;
+    class server_getrandomquestions_62013cfe function;
+    class server_isvalidusername_57841438 function;
+    class server_normalizeanswer_ebf9c3df function;
+    class server_open_065c7d34 function;
+    class server_rollbackandreturn_41866b32 function;
+    class server_roomadvancetimers_d241b628 function;
+    class server_roomconnections_45cd7c14 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>server.js</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>server.js node in server.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>roomConnections</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>roomConnections node in server.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>roomAdvanceTimers</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>roomAdvanceTimers node in server.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>activeSessions</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>activeSessions node in server.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>generateToken()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>generateToken() node in server.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>generateRoomCode()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>generateRoomCode() node in server.js.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>getBearerToken()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>getBearerToken() node in server.js.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>isValidUsername()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>isValidUsername() node in server.js.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>normalizeAnswer()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>normalizeAnswer() node in server.js.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>getPendingRoomTransition()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>getPendingRoomTransition() node in server.js.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>rollbackAndReturn()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>rollbackAndReturn() node in server.js.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>ensureDatabaseShape()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>ensureDatabaseShape() node in server.js.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>app</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>app node in server.js.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>getRandomQuestions()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>getRandomQuestions() node in server.js.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>open()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>open() node in server.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.js</code></td><td>15 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x14. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 7. Serverjs Clearroomadvancetimer Broadcasttoroom ====== -->
+<h2 id="serverjs-clearroomadvancetimer-broadcasttoroom">7. Serverjs Clearroomadvancetimer Broadcasttoroom</h2>
+<p>Serverjs Clearroomadvancetimer Broadcasttoroom groups implementation around serverjs, clearroomadvancetimer, broadcasttoroom, scheduleroomadvance, mostly in server.js. This section covers 6 nodes and 6 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serverjs Clearroomadvancetimer Broadcasttoroom (6 nodes, 6 edges)
+    server_broadcasttoroom_b04cc024("broadcastToRoom()<br/><small>server.js</small>")
+    server_clearroomadvancetimer_87e1d920("clearRoomAdvanceTimer()<br/><small>server.js</small>")
+    server_buildroomsummary_3fc971bb("buildRoomSummary()<br/><small>server.js</small>")
+    server_endgame_db9fa157("endGame()<br/><small>server.js</small>")
+    server_scheduleroomadvance_51fab44b("scheduleRoomAdvance()<br/><small>server.js</small>")
+    server_close_69558d9f("close()<br/><small>server.js</small>")
+    server_clearroomadvancetimer_87e1d920 -->|calls| server_endgame_db9fa157
+    server_clearroomadvancetimer_87e1d920 -->|calls| server_scheduleroomadvance_51fab44b
+    server_broadcasttoroom_b04cc024 -->|calls| server_close_69558d9f
+    server_broadcasttoroom_b04cc024 -->|calls| server_endgame_db9fa157
+    server_broadcasttoroom_b04cc024 -->|calls| server_scheduleroomadvance_51fab44b
+    server_buildroomsummary_3fc971bb -->|calls| server_endgame_db9fa157
+    class server_broadcasttoroom_b04cc024 function;
+    class server_clearroomadvancetimer_87e1d920 function;
+    class server_buildroomsummary_3fc971bb function;
+    class server_endgame_db9fa157 function;
+    class server_scheduleroomadvance_51fab44b function;
+    class server_close_69558d9f function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>clearRoomAdvanceTimer()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>endGame()</code><br><small style="color:var(--muted)">server.js</small><br><code>scheduleRoomAdvance()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>clearRoomAdvanceTimer() node in server.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>broadcastToRoom()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>close()</code><br><small style="color:var(--muted)">server.js</small><br><code>endGame()</code><br><small style="color:var(--muted)">server.js</small><br><code>scheduleRoomAdvance()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>broadcastToRoom() node in server.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>scheduleRoomAdvance()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>broadcastToRoom()</code><br><small style="color:var(--muted)">server.js</small><br><code>clearRoomAdvanceTimer()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>scheduleRoomAdvance() node in server.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>buildRoomSummary()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>endGame()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>buildRoomSummary() node in server.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>endGame()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>broadcastToRoom()</code><br><small style="color:var(--muted)">server.js</small><br><code>buildRoomSummary()</code><br><small style="color:var(--muted)">server.js</small><br><code>clearRoomAdvanceTimer()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>endGame() node in server.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>close()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>broadcastToRoom()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>close() node in server.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.js</code></td><td>6 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x6. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 8. Serverjs Getavatarurl Validatesession ====== -->
+<h2 id="serverjs-getavatarurl-validatesession">8. Serverjs Getavatarurl Validatesession</h2>
+<p>Serverjs Getavatarurl Validatesession groups implementation around serverjs, getavatarurl, validatesession, getuser, mostly in server.js. This section covers 5 nodes and 4 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serverjs Getavatarurl Validatesession (5 nodes, 4 edges)
+    server_getavatarurl_338f3eb4("getAvatarUrl()<br/><small>server.js</small>")
+    server_getuser_ddc3308a("getUser()<br/><small>server.js</small>")
+    server_isroommember_64cd36ce("isRoomMember()<br/><small>server.js</small>")
+    server_validatesession_97975449("validateSession()<br/><small>server.js</small>")
+    server_message_c7036e2e("message()<br/><small>server.js</small>")
+    server_getavatarurl_338f3eb4 -->|calls| server_message_c7036e2e
+    server_validatesession_97975449 -->|calls| server_message_c7036e2e
+    server_getuser_ddc3308a -->|calls| server_message_c7036e2e
+    server_isroommember_64cd36ce -->|calls| server_message_c7036e2e
+    class server_getavatarurl_338f3eb4 function;
+    class server_getuser_ddc3308a function;
+    class server_isroommember_64cd36ce function;
+    class server_validatesession_97975449 function;
+    class server_message_c7036e2e function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>getAvatarUrl()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>message()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>getAvatarUrl() node in server.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>validateSession()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>message()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>validateSession() node in server.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>getUser()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>message()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>getUser() node in server.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>isRoomMember()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>message()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>isRoomMember() node in server.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>message()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>getAvatarUrl()</code><br><small style="color:var(--muted)">server.js</small><br><code>getUser()</code><br><small style="color:var(--muted)">server.js</small><br><code>isRoomMember()</code><br><small style="color:var(--muted)">server.js</small><br>+1 more</td>
+  <td>No direct outbound edge</td>
+  <td>message() node in server.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.js</code></td><td>5 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x4. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 9. Serverjs Clampinteger Getquestiondelayseconds ====== -->
+<h2 id="serverjs-clampinteger-getquestiondelayseconds">9. Serverjs Clampinteger Getquestiondelayseconds</h2>
+<p>Serverjs Clampinteger Getquestiondelayseconds groups implementation around serverjs, clampinteger, getquestiondelayseconds, normalizecustomquestions, mostly in server.js. This section covers 4 nodes and 4 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serverjs Clampinteger Getquestiondelayseconds (4 nodes, 4 edges)
+    server_clampinteger_771fffc3("clampInteger()<br/><small>server.js</small>")
+    server_normalizecustomquestions_36e2c8e8("normalizeCustomQuestions()<br/><small>server.js</small>")
+    server_getquestiondelayseconds_c7f59c7f("getQuestionDelaySeconds()<br/><small>server.js</small>")
+    server_normalizeroomsettings_992c192d("normalizeRoomSettings()<br/><small>server.js</small>")
+    server_clampinteger_771fffc3 -->|calls| server_getquestiondelayseconds_c7f59c7f
+    server_clampinteger_771fffc3 -->|calls| server_normalizeroomsettings_992c192d
+    server_getquestiondelayseconds_c7f59c7f -->|calls| server_normalizeroomsettings_992c192d
+    server_normalizecustomquestions_36e2c8e8 -->|calls| server_normalizeroomsettings_992c192d
+    class server_clampinteger_771fffc3 function;
+    class server_normalizecustomquestions_36e2c8e8 function;
+    class server_getquestiondelayseconds_c7f59c7f function;
+    class server_normalizeroomsettings_992c192d function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>clampInteger()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getQuestionDelaySeconds()</code><br><small style="color:var(--muted)">server.js</small><br><code>normalizeRoomSettings()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>clampInteger() node in server.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>getQuestionDelaySeconds()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>clampInteger()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><code>normalizeRoomSettings()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>getQuestionDelaySeconds() node in server.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>normalizeCustomQuestions()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>normalizeRoomSettings()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>normalizeCustomQuestions() node in server.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>normalizeRoomSettings()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>clampInteger()</code><br><small style="color:var(--muted)">server.js</small><br><code>getQuestionDelaySeconds()</code><br><small style="color:var(--muted)">server.js</small><br><code>normalizeCustomQuestions()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>normalizeRoomSettings() node in server.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.js</code></td><td>4 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x4. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 10. Migratejs Pool Migrations ====== -->
+<h2 id="migratejs-pool-migrations">10. Migratejs Pool Migrations</h2>
+<p>Migratejs Pool Migrations groups implementation around migratejs, pool, migrations, mostly in migrate.js. This section covers 3 nodes and 2 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Migratejs Pool Migrations (3 nodes, 2 edges)
+    migrate_ce5070ef("migrate.js")
+    migrate_migrations_dd329da9("migrations<br/><small>migrate.js</small>")
+    migrate_pool_9b50bf79("pool<br/><small>migrate.js</small>")
+    migrate_ce5070ef -->|contains| migrate_migrations_dd329da9
+    migrate_ce5070ef -->|contains| migrate_pool_9b50bf79
+    class migrate_ce5070ef module;
+    class migrate_migrations_dd329da9 function;
+    class migrate_pool_9b50bf79 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>migrate.js</code><br><small style="color:var(--muted)">migrate.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>migrate.js node in migrate.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>pool</code><br><small style="color:var(--muted)">migrate.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>pool node in migrate.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>migrations</code><br><small style="color:var(--muted)">migrate.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>migrations node in migrate.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>migrate.js</code></td><td>3 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x2. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 11. Serverjs Withdefaultroomsettings Getroomstate ====== -->
+<h2 id="serverjs-withdefaultroomsettings-getroomstate">11. Serverjs Withdefaultroomsettings Getroomstate</h2>
+<p>Serverjs Withdefaultroomsettings Getroomstate groups implementation around serverjs, withdefaultroomsettings, getroomstate, getquestionsforroom, mostly in server.js. This section covers 3 nodes and 2 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serverjs Withdefaultroomsettings Getroomstate (3 nodes, 2 edges)
+    server_withdefaultroomsettings_d04df055("withDefaultRoomSettings()<br/><small>server.js</small>")
+    server_getquestionsforroom_50685b03("getQuestionsForRoom()<br/><small>server.js</small>")
+    server_getroomstate_e22cd0dc("getRoomState()<br/><small>server.js</small>")
+    server_withdefaultroomsettings_d04df055 -->|calls| server_getquestionsforroom_50685b03
+    server_withdefaultroomsettings_d04df055 -->|calls| server_getroomstate_e22cd0dc
+    class server_withdefaultroomsettings_d04df055 function;
+    class server_getquestionsforroom_50685b03 function;
+    class server_getroomstate_e22cd0dc function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>withDefaultRoomSettings()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getQuestionsForRoom()</code><br><small style="color:var(--muted)">server.js</small><br><code>getRoomState()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>withDefaultRoomSettings() node in server.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>getRoomState()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>withDefaultRoomSettings()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>getRoomState() node in server.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>getQuestionsForRoom()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>withDefaultRoomSettings()</code><br><small style="color:var(--muted)">server.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>getQuestionsForRoom() node in server.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>server.js</code></td><td>3 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x2. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 12. Databasejs Pool ====== -->
+<h2 id="databasejs-pool">12. Databasejs Pool</h2>
+<p>Databasejs Pool groups implementation around databasejs, pool, mostly in database.js. This section covers 2 nodes and 1 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Databasejs Pool (2 nodes, 1 edges)
+    database_6d613a1e("database.js")
+    database_pool_9ca9df53("pool<br/><small>database.js</small>")
+    database_6d613a1e -->|contains| database_pool_9ca9df53
+    class database_6d613a1e module;
+    class database_pool_9ca9df53 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>database.js</code><br><small style="color:var(--muted)">database.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>database.js node in database.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>pool</code><br><small style="color:var(--muted)">database.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>pool node in database.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>database.js</code></td><td>2 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 13. Migrate2Js Pool ====== -->
+<h2 id="migrate2js-pool">13. Migrate2Js Pool</h2>
+<p>Migrate2Js Pool groups implementation around migrate2js, pool, mostly in migrate2.js. This section covers 2 nodes and 1 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Migrate2Js Pool (2 nodes, 1 edges)
+    migrate2_77a4ab1f("migrate2.js")
+    migrate2_pool_3511c2f5("pool<br/><small>migrate2.js</small>")
+    migrate2_77a4ab1f -->|contains| migrate2_pool_3511c2f5
+    class migrate2_77a4ab1f module;
+    class migrate2_pool_3511c2f5 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>migrate2.js</code><br><small style="color:var(--muted)">migrate2.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>migrate2.js node in migrate2.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>pool</code><br><small style="color:var(--muted)">migrate2.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>pool node in migrate2.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>migrate2.js</code></td><td>2 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 14. Postgresql Pool Databasejs ====== -->
+<h2 id="postgresql-pool-databasejs">14. Postgresql Pool Databasejs</h2>
+<p>Postgresql Pool Databasejs groups implementation around postgresql, pool, databasejs, mostly in database.js. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Postgresql Pool Databasejs (1 nodes, 0 edges)
+    database_postgresql_pool_e2816967("PostgreSQL Pool<br/><small>database.js</small>")
+    class database_postgresql_pool_e2816967 klass;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>PostgreSQL Pool</code><br><small style="color:var(--muted)">database.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>PostgreSQL Pool node in database.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>database.js</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: No high-confidence call edges detected. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<h2 id="hyperedges">Group Relationships (Hyperedges)</h2>
+<div class="grid">
+
+  <div class="card">
+    <h4>Authentication Session Flow</h4>
+    <p><code>participate_in</code> — 8 participants</p>
+    <ul>
+      <li><code>schema_users_table</code></li>
+      <li><code>schema_sessions_table</code></li>
+      <li><code>server_active_sessions</code></li>
+      <li><code>server_register_endpoint</code></li>
+      <li><code>server_validate_session</code></li>
+      <li>... and 3 more</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Multiplayer Room Game Flow</h4>
+    <p><code>participate_in</code> — 11 participants</p>
+    <ul>
+      <li><code>schema_rooms_table</code></li>
+      <li><code>schema_room_players_table</code></li>
+      <li><code>schema_room_questions_table</code></li>
+      <li><code>schema_room_answers_table</code></li>
+      <li><code>server_create_room_endpoint</code></li>
+      <li>... and 6 more</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Realtime Room State Sync</h4>
+    <p><code>participate_in</code> — 7 participants</p>
+    <ul>
+      <li><code>server_room_connections</code></li>
+      <li><code>server_websocket_channel</code></li>
+      <li><code>server_broadcast_to_room</code></li>
+      <li><code>server_get_room_state</code></li>
+      <li><code>server_room_state_endpoint</code></li>
+      <li>... and 2 more</li>
+    </ul>
+  </div>
+</div>
+<hr>
+<h2 id="stats">Project Statistics</h2>
+
+<div class="grid">
+  <div class="card">
+    <h4>Graph</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>Nodes</td><td>113</td></tr>
+      <tr><td>Edges</td><td>172</td></tr>
+      <tr><td>Hyperedges</td><td>3</td></tr>
+      <tr><td>Communities</td><td>16</td></tr>
+      <tr><td>Documented Sections</td><td>13</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Edge Confidence</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>EXTRACTED</td><td>170</td></tr>
+      <tr><td>INFERRED</td><td>2</td></tr>
+      <tr><td>AMBIGUOUS</td><td>0</td></tr>
+    </table>
+  </div>
+</div>
+
+<div style="text-align:center; padding:40px 0; color: var(--muted); font-size:0.9rem;">
+  <p>elysia_game — Architecture Documentation</p>
+  <p>Generated: 2026-06-03 23:17 UTC · graphify callflow-html</p>
+</div>
+
+</div><!-- .container -->
+
+<script>
+(function () {
+  const mermaidConfig = {
+    startOnLoad: false,
+    theme: 'dark',
+    securityLevel: 'loose',
+    flowchart: { htmlLabels: true, useMaxWidth: true },
+    themeVariables: {
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#38bdf8',
+      secondaryColor: '#0f172a',
+      tertiaryColor: '#334155',
+      lineColor: '#64748b',
+      textColor: '#e2e8f0',
+    }
+  };
+
+  mermaid.initialize(mermaidConfig);
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function enhanceMermaidDiagrams() {
+    document.querySelectorAll('.mermaid').forEach((container) => {
+      if (container.dataset.zoomReady === 'true') return;
+      const svg = container.querySelector('svg');
+      if (!svg) return;
+
+      container.dataset.zoomReady = 'true';
+      container.classList.add('is-enhanced');
+
+      const viewport = document.createElement('div');
+      viewport.className = 'mermaid-viewport';
+      svg.parentNode.insertBefore(viewport, svg);
+      viewport.appendChild(svg);
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'mermaid-toolbar';
+      toolbar.innerHTML = [
+        '<button type="button" data-action="zoom-out" title="Zoom out">-</button>',
+        '<span class="zoom-level" data-role="level">100%</span>',
+        '<button type="button" data-action="zoom-in" title="Zoom in">+</button>',
+        '<button type="button" data-action="fit" title="Fit width">Fit</button>',
+        '<button type="button" data-action="reset" title="Reset view">Reset</button>'
+      ].join('');
+      container.insertBefore(toolbar, viewport);
+
+      const state = { scale: 1, x: 0, y: 0, dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
+      const level = toolbar.querySelector('[data-role="level"]');
+
+      function applyTransform() {
+        svg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+        level.textContent = `${Math.round(state.scale * 100)}%`;
+      }
+
+      function zoomBy(delta) {
+        state.scale = clamp(state.scale + delta, 0.25, 3);
+        applyTransform();
+      }
+
+      function reset() {
+        state.scale = 1;
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      function fitWidth() {
+        const rawWidth = svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width
+          ? svg.viewBox.baseVal.width
+          : svg.getBoundingClientRect().width / state.scale;
+        if (!rawWidth) {
+          reset();
+          return;
+        }
+        state.scale = clamp((viewport.clientWidth - 48) / rawWidth, 0.25, 1.4);
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      toolbar.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+        if (action === 'zoom-in') zoomBy(0.15);
+        if (action === 'zoom-out') zoomBy(-0.15);
+        if (action === 'fit') fitWidth();
+        if (action === 'reset') reset();
+      });
+
+      viewport.addEventListener('wheel', (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        zoomBy(event.deltaY < 0 ? 0.1 : -0.1);
+      }, { passive: false });
+
+      viewport.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        state.dragging = true;
+        state.startX = event.clientX;
+        state.startY = event.clientY;
+        state.originX = state.x;
+        state.originY = state.y;
+        viewport.classList.add('is-dragging');
+        viewport.setPointerCapture(event.pointerId);
+      });
+
+      viewport.addEventListener('pointermove', (event) => {
+        if (!state.dragging) return;
+        state.x = state.originX + event.clientX - state.startX;
+        state.y = state.originY + event.clientY - state.startY;
+        applyTransform();
+      });
+
+      function endDrag(event) {
+        if (!state.dragging) return;
+        state.dragging = false;
+        viewport.classList.remove('is-dragging');
+        if (viewport.hasPointerCapture(event.pointerId)) {
+          viewport.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      viewport.addEventListener('pointerup', endDrag);
+      viewport.addEventListener('pointercancel', endDrag);
+      applyTransform();
+    });
+  }
+
+  function renderMermaid() {
+    const result = mermaid.run
+      ? mermaid.run({ querySelector: '.mermaid' })
+      : Promise.resolve();
+    Promise.resolve(result)
+      .then(enhanceMermaidDiagrams)
+      .catch((error) => {
+        console.error('Mermaid render failed:', error);
+        enhanceMermaidDiagrams();
+      });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderMermaid);
+  } else {
+    renderMermaid();
+  }
+})();
+</script>
+
+</body>
+</html>

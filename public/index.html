@@ -51,6 +51,7 @@
                 box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15);
                 max-width: 480px;
                 width: 100%;
+                min-width: 0;
                 overflow: hidden;
                 border: 1px solid rgba(255,255,255,0.7);
                 display: flex;
@@ -58,9 +59,48 @@
                 transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             }
 
+            
+            #lobbyGrid {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                transition: all 0.3s;
+                width: 100%;
+            }
+            #lobbyGrid .lobby-col-left {
+                width: 100%;
+                max-width: 480px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            #lobbyGrid .lobby-col-left > * {
+                width: 100%;
+            }
+            #lobbyGrid .lobby-col-right {
+                display: none;
+                width: 100%;
+            }
+            #lobbyGrid.form-active {
+                display: block; /* Fallback for mobile */
+            }
+            #lobbyGrid.form-active .lobby-col-right {
+                display: block;
+                margin-top: 24px;
+            }
+            
             @media (min-width: 768px) {
-                .container { max-width: 1000px; }
-                .screen-grid { display: grid; grid-template-columns: 350px 1fr; gap: 30px; align-items: start; }
+                .container.wide { max-width: 1000px; }
+                .screen-grid { display: grid; grid-template-columns: 350px minmax(0, 1fr); gap: 30px; align-items: start; }
+                #lobbyGrid.form-active {
+                    display: grid;
+                    grid-template-columns: 350px minmax(0, 1fr);
+                    gap: 30px;
+                    align-items: start;
+                }
+                #lobbyGrid.form-active .lobby-col-right {
+                    margin-top: 0;
+                }
             }
 
             h1, h2, h3 { font-family: "Plus Jakarta Sans", sans-serif; color: var(--text-dark); }
@@ -94,7 +134,7 @@
             .screen > h2 { text-align: center; margin-bottom: 24px; font-weight: 700; }
             
             input[type="text"], input[type="number"], select {
-                width: 100%; padding: 14px 16px; font-size: 15px; font-weight: 500;
+                width: 100%; padding: 14px 16px; font-size: 15px; font-weight: 500; min-width: 0;
                 border: 2px solid var(--border-color); border-radius: var(--radius-md);
                 margin-bottom: 16px; background: #fff; transition: all 0.2s; font-family: inherit; color: var(--text-dark);
             }
@@ -120,8 +160,11 @@
 
             .error-msg { color: var(--error); text-align: center; margin-top: 10px; min-height: 20px; font-size: 14px; font-weight: 500; }
             
-            .lobby-actions { display: flex; gap: 12px; margin-bottom: 24px; flex-direction: column; }
-            @media (min-width: 768px) { .lobby-actions { flex-direction: row; } .lobby-actions .btn { flex: 1; } }
+            .lobby-actions { display: flex; gap: 12px; margin-bottom: 24px; flex-direction: column; width: 100%; }
+            @media (min-width: 768px) { .lobby-actions { flex-direction: row; } .lobby-actions .btn { flex: 1; width: auto; } }
+            
+            .form-actions { display: flex; gap: 12px; width: 100%; }
+            .form-actions .btn { flex: 1; width: auto; }
 
             .active-room-panel { background: var(--primary-light); border: 1px solid rgba(79,70,229,0.2); border-radius: var(--radius-md); padding: 20px; text-align: center; margin-bottom: 24px; }
             .active-room-panel div { color: var(--text-muted); font-size: 14px; font-weight: 500; }
@@ -216,6 +259,8 @@
             .winner-card { text-align: center; padding: 30px; background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-radius: var(--radius-md); margin-bottom: 24px; border: 1px solid #fde68a; }
             .winner-card .trophy { font-size: 4em; margin-bottom: 10px; display: inline-block; }
             .winner-card .winner-name { font-size: 1.8em; font-weight: 800; margin: 5px 0; color: #d97706; font-family: "Plus Jakarta Sans"; }
+            .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--text-dark); color: #fff; padding: 12px 24px; border-radius: 30px; font-weight: 600; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9999; box-shadow: var(--shadow-md); }
+            .toast.show { opacity: 1; }
         </style>
     </head>
     <body>
@@ -288,6 +333,7 @@
 
                     <!-- Join by code -->
                     <div id="joinForm" class="hidden">
+                        <h3 style="margin-bottom: 15px;">Join a Room</h3>
                         <input
                             type="text"
                             id="roomCodeInput"
@@ -295,9 +341,10 @@
                             maxlength="6"
                             style="text-transform: uppercase"
                         />
-                        <button class="btn btn-primary" onclick="joinRoom()">
-                            Join
-                        </button>
+                        <div class="form-actions">
+                            <button class="btn btn-secondary" onclick="hideLobbyForms()">Back</button>
+                            <button class="btn btn-primary" onclick="joinRoom()">Join</button>
+                        </div>
                     </div>
 
                     <!-- Create room settings -->
@@ -399,9 +446,10 @@
                                 </button>
                             </div>
                         </div>
-                        <button class="btn btn-success" onclick="createRoom()">
-                            Create Room
-                        </button>
+                        <div class="form-actions">
+                            <button class="btn btn-secondary" onclick="hideLobbyForms()">Back</button>
+                            <button class="btn btn-success" onclick="createRoom()">Create Room</button>
+                        </div>
                     </div>
                         </div>
                     </div>
@@ -413,7 +461,7 @@
                     <h2>🏠 Room</h2>
                     <div class="screen-grid">
                         <div class="room-col-left">
-                            <div class="room-code" id="roomCodeDisplay">------</div>
+                            <div class="room-code" id="roomCodeDisplay" onclick="copyRoomLink()" style="cursor: pointer;" title="Click to copy invite link">------</div>
                             <p style="text-align: center; color: var(--text-muted); margin-bottom: 20px; font-weight: 500;">
                                 Share this code with friends to join
                             </p>
@@ -421,7 +469,7 @@
                                 <h3>Settings</h3>
                                 <div id="roomSettingsInfo"></div>
                             </div>
-                            <div style="display: flex; gap: 12px; flex-direction: column;">
+                            <div class="form-actions" style="flex-direction: column;">
                                 <button class="btn btn-secondary" onclick="backToLobby()">Back to Lobby</button>
                                 <button class="btn btn-danger" onclick="leaveRoom()" style="background: var(--error-light); color: var(--error);">Leave Room</button>
                             </div>
@@ -429,7 +477,7 @@
                         <div class="room-col-right">
                             <h3 style="margin-bottom: 15px;">Players</h3>
                             <ul class="player-list" id="playerList"></ul>
-                            <div style="display: flex; gap: 12px;">
+                            <div class="form-actions">
                                 <button class="btn btn-primary" id="readyBtn" onclick="toggleReady()">Ready</button>
                                 <button class="btn btn-success hidden" id="startBtn" onclick="startGame()">Start Game</button>
                             </div>
@@ -515,6 +563,7 @@
             </div>
         </div>
         <div class="confetti-layer" id="confettiLayer"></div>
+        <div id="toast" class="toast">Link copied to clipboard!</div>
 
         <script>
             // ═══════════════════════════════════════════════════════════
@@ -561,6 +610,16 @@
                     target.style.display = "flex";
                 } else {
                     target.style.display = "block";
+                }
+                
+                const container = document.querySelector(".container");
+                const lobbyGrid = document.getElementById("lobbyGrid");
+                const hasForm = lobbyGrid && lobbyGrid.classList.contains("form-active");
+                
+                if (screenId === "roomScreen" || screenId === "summaryScreen" || (screenId === "lobbyScreen" && hasForm)) {
+                    container.classList.add("wide");
+                } else {
+                    container.classList.remove("wide");
                 }
             }
 
@@ -967,21 +1026,47 @@
                     currentUser.username;
                 showUserHeader(true);
                 showScoreBar(false);
+                if(document.getElementById("lobbyGrid")) {
+                    document.getElementById("lobbyGrid").classList.remove("form-active");
+                    document.getElementById("joinForm").classList.add("hidden");
+                    document.getElementById("createForm").classList.add("hidden");
+                }
                 showScreen("lobbyScreen");
                 updateActiveRoomPanel();
                 connectWS();
             }
 
             function showCreateRoom() {
-                document
-                    .getElementById("createForm")
-                    .classList.remove("hidden");
+                document.getElementById("createForm").classList.remove("hidden");
                 document.getElementById("joinForm").classList.add("hidden");
+                document.getElementById("lobbyGrid").classList.add("form-active");
+                document.querySelector(".container").classList.add("wide");
             }
 
             function showJoinRoom() {
                 document.getElementById("joinForm").classList.remove("hidden");
                 document.getElementById("createForm").classList.add("hidden");
+                document.getElementById("lobbyGrid").classList.add("form-active");
+                document.querySelector(".container").classList.add("wide");
+            }
+
+            function hideLobbyForms() {
+                document.getElementById("joinForm").classList.add("hidden");
+                document.getElementById("createForm").classList.add("hidden");
+                document.getElementById("lobbyGrid").classList.remove("form-active");
+                document.querySelector(".container").classList.remove("wide");
+            }
+
+            function copyRoomLink() {
+                const code = document.getElementById("roomCodeDisplay").innerText;
+                if (!code || code === "------") return;
+                const url = new URL(window.location.href);
+                url.searchParams.set("room", code);
+                navigator.clipboard.writeText(url.toString()).then(() => {
+                    const toast = document.getElementById("toast");
+                    toast.classList.add("show");
+                    setTimeout(() => toast.classList.remove("show"), 3000);
+                });
             }
 
             function toggleCustomQ() {

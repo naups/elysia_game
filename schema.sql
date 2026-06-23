@@ -1,5 +1,13 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Updated_at trigger function
+CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Tabel Users (Penyimpanan Skor)
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -13,13 +21,17 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TIMESTAMP
 );
 
+CREATE TRIGGER users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
 -- Tabel Game Data (Konten Permainan)
 CREATE TABLE IF NOT EXISTS questions (
     id SERIAL PRIMARY KEY,
     question_text TEXT NOT NULL,
     correct_answer TEXT NOT NULL,
-    options JSONB NOT NULL, -- Array jawaban pilihan
-    question_type VARCHAR(20) DEFAULT 'multiple_choice'
+    options JSONB NOT NULL CHECK (jsonb_typeof(options) = 'array' AND jsonb_array_length(options) >= 2),
+    question_type VARCHAR(20) DEFAULT 'multiple_choice',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabel Sessions (Token-based auth)
@@ -35,7 +47,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS rooms (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code VARCHAR(6) NOT NULL UNIQUE,
-    master_id UUID REFERENCES users(id),
+    master_id UUID REFERENCES users(id) ON DELETE SET NULL,
     settings JSONB NOT NULL DEFAULT '{
         "max_players": 6,
         "question_count": 5,
@@ -47,7 +59,7 @@ CREATE TABLE IF NOT EXISTS rooms (
         "room_idle_timeout_seconds": 1800,
         "custom_questions": []
     }',
-    status VARCHAR(20) DEFAULT 'waiting',
+    status VARCHAR(20) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'playing', 'finished')),
     current_question_order INTEGER DEFAULT 0,
     current_question_started_at TIMESTAMPTZ,
     last_activity_at TIMESTAMPTZ DEFAULT NOW(),
@@ -58,9 +70,9 @@ CREATE TABLE IF NOT EXISTS rooms (
 CREATE TABLE IF NOT EXISTS room_players (
     id SERIAL PRIMARY KEY,
     room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     is_ready BOOLEAN DEFAULT FALSE,
-    score INTEGER DEFAULT 0,
+    score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0),
     streak INTEGER DEFAULT 0,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(room_id, user_id)
@@ -70,9 +82,9 @@ CREATE TABLE IF NOT EXISTS room_players (
 CREATE TABLE IF NOT EXISTS room_questions (
     id SERIAL PRIMARY KEY,
     room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id),
-    question_id INTEGER REFERENCES questions(id),
-    custom_question JSONB,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    question_id INTEGER REFERENCES questions(id) ON DELETE SET NULL,
+    custom_question JSONB CHECK (custom_question IS NULL OR (custom_question ? 'text' AND custom_question ? 'correct_answer')),
     question_order INTEGER NOT NULL
 );
 
@@ -80,19 +92,19 @@ CREATE TABLE IF NOT EXISTS room_questions (
 CREATE TABLE IF NOT EXISTS room_answers (
     id SERIAL PRIMARY KEY,
     room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id),
-    question_id INTEGER,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    question_id INTEGER REFERENCES questions(id) ON DELETE SET NULL,
     question_order INTEGER NOT NULL,
-    answer TEXT,
-    is_correct BOOLEAN,
+    answer TEXT NOT NULL DEFAULT '',
+    is_correct BOOLEAN NOT NULL DEFAULT false,
     answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabel History (Opsional, untuk log permainan)
 CREATE TABLE IF NOT EXISTS game_history (
     id SERIAL PRIMARY KEY,
-    user_id UUID REFERENCES users(id),
-    question_id INTEGER REFERENCES questions(id),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    question_id INTEGER REFERENCES questions(id) ON DELETE SET NULL,
     is_correct BOOLEAN,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -110,6 +122,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS room_questions_same_for_all_order
 CREATE UNIQUE INDEX IF NOT EXISTS room_questions_per_player_order
     ON room_questions(room_id, user_id, question_order)
     WHERE user_id IS NOT NULL;
+
+-- Indexes for cleanup and frequent queries
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_rooms_status_activity ON rooms(last_activity_at) WHERE status = 'waiting';
+CREATE INDEX IF NOT EXISTS idx_room_players_room ON room_players(room_id);
+CREATE INDEX IF NOT EXISTS idx_room_answers_room_order ON room_answers(room_id, question_order);
 
 -- Insert sample questions
 INSERT INTO questions (question_text, correct_answer, options) VALUES
