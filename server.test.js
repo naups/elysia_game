@@ -324,6 +324,7 @@ describe("POST /api/answer", () => {
       reg.token,
     );
 
+    console.log("ANSWER DEBUG:", JSON.stringify(json));
     expect(json.success).toBe(true);
     expect(json.isCorrect).toBe(true);
     expect(json.score).toBe(10);

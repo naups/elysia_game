@@ -3,6 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' https://api.dicebear.com data:; connect-src 'self' ws: wss:; frame-ancestors 'none';">
         <title>Trivia Quiz — Multiplayer</title>
                 <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
@@ -660,6 +661,10 @@
                 );
             }
 
+            function getSafeAvatarUrl(seed) {
+                return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
+            }
+
             function getUrlRoomCode() {
                 const code = new URLSearchParams(window.location.search).get(
                     "room",
@@ -781,9 +786,9 @@
                     .value.trim();
                 const errEl = document.getElementById("loginError");
 
-                if (!username || username.length < 2) {
+                if (!/^[a-zA-Z0-9_\- ]{2,30}$/.test(username)) {
                     errEl.textContent =
-                        "Username must be at least 2 characters";
+                        "Username must be 2-30 characters, letters/numbers/underscores only";
                     return;
                 }
 
@@ -827,6 +832,7 @@
                 localStorage.removeItem("authToken");
                 localStorage.removeItem("userId");
                 localStorage.removeItem("username");
+                localStorage.removeItem("userAvatar");
                 disconnectWS();
                 showUserHeader(false);
                 showScoreBar(false);
@@ -866,7 +872,13 @@
                 };
 
                 ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
+                    let data;
+                    try {
+                        data = JSON.parse(event.data);
+                    } catch (e) {
+                        console.error("Invalid WS message:", e);
+                        return;
+                    }
 
                     // Handle auth_ok first — flush queued messages
                     if (data.type === "auth_ok") {
@@ -921,6 +933,9 @@
             }
 
             function handleWSMessage(data) {
+                if (!data || typeof data !== "object" || typeof data.type !== "string") {
+                    return; // Ignore malformed messages
+                }
                 switch (data.type) {
                     case "auth_ok":
                         break;
@@ -1021,7 +1036,7 @@
                 hideLeaderboardOverlay();
                 document.getElementById("userAvatar").src =
                     currentUser.avatar ||
-                    `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(currentUser.username)}`;
+                    getSafeAvatarUrl(currentUser.username);
                 document.getElementById("userName").textContent =
                     currentUser.username;
                 showUserHeader(true);
@@ -1129,6 +1144,14 @@
 
             async function createRoom() {
                 const errEl = document.getElementById("lobbyError");
+                if (document.getElementById("setQuestionSource").value === "custom") {
+                    for (const q of customQuestions) {
+                        if (q.text.length > 500 || q.options.some(o => o.length > 200) || q.correct_answer.length > 200) {
+                            errEl.textContent = "Question text max 500 chars, options max 200 chars each";
+                            return;
+                        }
+                    }
+                }
                 const delaySeconds = parseInt(
                     document.getElementById("setQuestionDelay").value,
                     10,
@@ -1141,6 +1164,28 @@
                     document.getElementById("setRoomIdleTimeout").value,
                     10,
                 );
+                // Validate custom questions length
+                if (document.getElementById("setQuestionSource").value === "custom") {
+                    for (let i = 0; i < customQuestions.length; i++) {
+                        const q = customQuestions[i];
+                        if (q.text.length > 500 || q.options.some(o => o.length > 200) || q.correct_answer.length > 200) {
+                            errEl.textContent = "Question text max 500 chars, options max 200 chars each";
+                            return;
+                        }
+                    }
+                }
+
+                // Validate custom questions length
+                if (document.getElementById("setQuestionSource").value === "custom") {
+                    for (let i = 0; i < customQuestions.length; i++) {
+                        const q = customQuestions[i];
+                        if (q.text.length > 500 || q.options.some(o => o.length > 200) || q.correct_answer.length > 200) {
+                            errEl.textContent = "Question text max 500 chars, options max 200 chars each";
+                            return;
+                        }
+                    }
+                }
+
                 const settings = {
                     maxPlayers:
                         parseInt(
@@ -1211,8 +1256,8 @@
                     .toUpperCase();
                 const errEl = document.getElementById("lobbyError");
 
-                if (!code || code.length < 4) {
-                    errEl.textContent = "Enter a valid room code";
+                if (!/^[A-Z0-9]{4,6}$/.test(code)) {
+                    errEl.textContent = "Invalid room code format";
                     return;
                 }
 
@@ -1328,7 +1373,7 @@
                 persistRoomCode(code);
                 document.getElementById("userAvatar").src =
                     currentUser.avatar ||
-                    `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(currentUser.username)}`;
+                    getSafeAvatarUrl(currentUser.username);
                 document.getElementById("userName").textContent =
                     currentUser.username;
                 showUserHeader(true);
@@ -1547,11 +1592,15 @@
                         </span>
                         ${
                             isMaster && !isMe && !isPlayerMaster
-                                ? `<button class="kick-btn" onclick="kickPlayer('${escapeHtml(p.userId)}')">Kick</button>`
+                                ? `<button class="kick-btn" data-user-id="${escapeHtml(p.userId)}">Kick</button>`
                                 : ""
                         }
                     `;
                     list.appendChild(li);
+                });
+                // Add event delegation for kick buttons
+                list.querySelectorAll('.kick-btn[data-user-id]').forEach(btn => {
+                    btn.addEventListener('click', () => kickPlayer(btn.dataset.userId));
                 });
             }
 
@@ -1570,11 +1619,15 @@
                     <span class="player-badge badge-not-ready">✗ Not Ready</span>
                     ${
                         isMaster && !isMe && !isPlayerMaster
-                            ? `<button class="kick-btn" onclick="kickPlayer('${escapeHtml(player.userId)}')">Kick</button>`
+                            ? `<button class="kick-btn" data-user-id="${escapeHtml(player.userId)}">Kick</button>`
                             : ""
                     }
                 `;
                 list.appendChild(li);
+                // Add event delegation for kick buttons
+                li.querySelectorAll('.kick-btn[data-user-id]').forEach(btn => {
+                    btn.addEventListener('click', () => kickPlayer(btn.dataset.userId));
+                });
             }
 
             function removePlayerFromList(userId) {
@@ -1919,6 +1972,9 @@
                     input.className = "fill-answer";
                     input.id = "fillAnswerInput";
                     input.placeholder = "Type your answer";
+                    input.maxLength = 200;
+                    input.maxLength = 200;
+                    input.maxLength = 200;
                     input.addEventListener("keydown", (event) => {
                         if (event.key === "Enter") {
                             selectAnswer(input.value, null);
@@ -2157,7 +2213,7 @@
                             .map(
                                 (player) => `
                                     <div class="podium-place ${placeClass[player.rank]}">
-                                        <div class="podium-player">${escapeHtml(player.username)}<br>${player.score} pts</div>
+                                        <div class="podium-player">${escapeHtml(player.username)}<br>${parseInt(player.score) || 0} pts</div>
                                         <div class="podium-bar" data-height="${heights[player.rank]}">${placeLabel[player.rank]}</div>
                                     </div>
                                 `,
@@ -2192,7 +2248,7 @@
                     <div class="winner-card">
                         <div class="trophy">🏆</div>
                         <div class="winner-name">${escapeHtml(winner.username)}</div>
-                        <div>${winner.score} points · ${winner.accuracy}% accuracy</div>
+                        <div>${parseInt(winner.score) || 0} points · ${parseInt(winner.accuracy) || 0}% accuracy</div>
                     </div>
                 `
                     : "";
@@ -2219,10 +2275,10 @@
                             <img src="${escapeHtml(p.avatar)}" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:6px" />
                             ${escapeHtml(p.username)}
                         </td>
-                        <td>${p.score}</td>
+                        <td>${parseInt(p.score) || 0}</td>
                         <td>
-                            ${p.accuracy}%
-                            <span class="accuracy-bar" style="width:${p.accuracy * 0.8}px"></span>
+                            ${parseInt(p.accuracy) || 0}%
+                            <span class="accuracy-bar" style="width:${(parseInt(p.accuracy) || 0) * 0.8}px"></span>
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -2410,7 +2466,7 @@
 
                     document.getElementById("userAvatar").src =
                         currentUser.avatar ||
-                        `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(currentUser.username)}`;
+                        getSafeAvatarUrl(currentUser.username);
                     document.getElementById("userName").textContent =
                         currentUser.username;
                     showUserHeader(true);

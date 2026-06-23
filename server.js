@@ -19,6 +19,7 @@ const roomQuestionTimers = new Map();
 const activeSessions = new Map();
 // Map<socketId, { userId, username, roomCode }>
 const socketStates = new Map();
+const MAX_WS_CONNECTIONS = 1000;
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{2,50}$/;
 const DEFAULT_ROOM_SETTINGS = {
   max_players: 6,
@@ -139,7 +140,7 @@ function verifyJwt(token, secret) {
 
 const rateLimitStore = new Map();
 
-function checkRateLimit(ip, limit = 5, windowMs = 60000) {
+function checkRateLimit(ip, limit = 30, windowMs = 60000) {
   const now = Date.now();
   if (!rateLimitStore.has(ip)) {
     rateLimitStore.set(ip, [now]);
@@ -157,11 +158,19 @@ function getSecureAuthEnabled() {
 }
 
 function getJwtAccessSecret() {
-  return process.env.JWT_ACCESS_SECRET || "change-me-access-secret";
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret || secret === "change-me-access-secret") {
+    throw new Error("JWT_ACCESS_SECRET must be set to a secure random value");
+  }
+  return secret;
 }
 
 function getJwtRefreshSecret() {
-  return process.env.JWT_REFRESH_SECRET || "change-me-refresh-secret";
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret || secret === "change-me-refresh-secret") {
+    throw new Error("JWT_REFRESH_SECRET must be set to a secure random value");
+  }
+  return secret;
 }
 
 function getAccessTokenExpiresIn() {
@@ -225,6 +234,10 @@ async function authenticateSocketState(ws, token) {
 
 function isValidUsername(username) {
   return typeof username === "string" && USERNAME_PATTERN.test(username.trim());
+}
+
+function isValidRoomCode(code) {
+  return typeof code === "string" && /^[A-Z0-9]{4,6}$/.test(code.toUpperCase());
 }
 
 function normalizeAnswer(answer) {
@@ -441,6 +454,14 @@ async function ensureDatabaseShape() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'local'",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
+    "CREATE UNIQUE INDEX IF NOT EXISTS game_history_one_answer_per_question ON game_history(user_id, question_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS room_answers_one_answer_per_question ON room_answers(room_id, user_id, question_order)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS room_questions_same_for_all_order ON room_questions(room_id, question_order) WHERE user_id IS NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS room_questions_per_player_order ON room_questions(room_id, user_id, question_order) WHERE user_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)",
+    "CREATE INDEX IF NOT EXISTS idx_rooms_status_activity ON rooms(last_activity_at) WHERE status = 'waiting'",
+    "CREATE INDEX IF NOT EXISTS idx_room_players_room ON room_players(room_id)",
+    "CREATE INDEX IF NOT EXISTS idx_room_answers_room_order ON room_answers(room_id, question_order)",
   ];
 
   for (const statement of statements) {
@@ -508,7 +529,11 @@ async function broadcastToRoom(roomCode, message, excludeWs = null) {
   const excludedSocketId = excludeWs ? getSocketId(excludeWs) : null;
   for (const conn of connections) {
     if (conn.socketId !== excludedSocketId && conn.ws.readyState === 1) {
-      conn.ws.send(data);
+      try {
+        conn.ws.send(data);
+      } catch (e) {
+        // Connection is dead, will be cleaned up on close
+      }
     }
   }
 }
@@ -658,7 +683,10 @@ async function buildRoomLeaderboard(roomId, currentUserId) {
 }
 
 const app = new Elysia()
-  .use(cors())
+  .use(cors({
+    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",") : true,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  }))
   .use(
     staticPlugin({
       assets: "./public",
@@ -692,7 +720,12 @@ app.get("/", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 // Register + Login (returns token)
-app.post("/api/register", async ({ body }) => {
+app.post("/api/register", async ({ body, headers }) => {
+  const ip = headers["x-forwarded-for"]?.split(",")[0]?.trim() || "127.0.0.1";
+  if (!checkRateLimit(ip, 100, 60000)) {
+    return { success: false, message: "Too many requests. Please try again later." };
+  }
+
   const username = body?.username?.trim();
 
   if (!isValidUsername(username)) {
@@ -755,8 +788,8 @@ app.post("/api/auth/register", async ({ body, headers, set }) => {
     return { success: false, message: "Secure authentication is disabled" };
   }
 
-  const ip = headers["x-forwarded-for"] || "127.0.0.1";
-  if (!checkRateLimit(ip, 5, 60000)) {
+  const ip = request?.request?.remoteAddress || headers["x-forwarded-for"]?.split(",")[0]?.trim() || "127.0.0.1";
+  if (!checkRateLimit(ip, 20, 60000)) {
     set.status = 429;
     return { success: false, message: "Too many requests" };
   }
@@ -796,7 +829,7 @@ app.post("/api/auth/register", async ({ body, headers, set }) => {
       return { success: false, message: "Username or email already exists" };
     }
 
-    const cost = parseInt(process.env.PASSWORD_HASH_COST || "12");
+    const cost = Math.max(10, parseInt(process.env.PASSWORD_HASH_COST || "12"));
     const passwordHash = await Bun.password.hash(password, {
       algorithm: "bcrypt",
       cost,
@@ -823,7 +856,7 @@ app.post("/api/auth/login", async ({ body, headers, set }) => {
     return { success: false, message: "Secure authentication is disabled" };
   }
 
-  const ip = headers["x-forwarded-for"] || "127.0.0.1";
+  const ip = request?.request?.remoteAddress || headers["x-forwarded-for"]?.split(",")[0]?.trim() || "127.0.0.1";
   if (!checkRateLimit(ip, 10, 60000)) {
     set.status = 429;
     return { success: false, message: "Too many requests" };
@@ -979,9 +1012,9 @@ app.get("/api/auth/validate", async ({ headers }) => {
 
 async function getRandomQuestions(userId, count = 1) {
   const result = await pool.query(
-    `SELECT * FROM questions
-     WHERE id NOT IN (
-       SELECT question_id FROM game_history WHERE user_id = $1
+    `SELECT * FROM questions q
+     WHERE NOT EXISTS (
+       SELECT 1 FROM game_history gh WHERE gh.user_id = $1 AND gh.question_id = q.id
      )
      ORDER BY RANDOM() LIMIT $2`,
     [userId, count],
@@ -1038,11 +1071,13 @@ app.post("/api/answer", async ({ headers, body }) => {
   if (!questionId || typeof userAnswer !== "string" || !userAnswer.trim()) {
     return { success: false, message: "Missing required fields" };
   }
+  if (userAnswer.length > 500) {
+    return { success: false, message: "Answer too long (max 500 characters)" };
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("LOCK TABLE game_history IN SHARE ROW EXCLUSIVE MODE");
 
     const questionResult = await client.query(
       "SELECT correct_answer FROM questions WHERE id = $1",
@@ -1059,11 +1094,21 @@ app.post("/api/answer", async ({ headers, body }) => {
       normalizeAnswer(userAnswer) === normalizeAnswer(correctAnswer);
     const points = isCorrect ? 10 : 0;
 
-    const existingAnswer = await client.query(
-      "SELECT is_correct FROM game_history WHERE user_id = $1 AND question_id = $2 LIMIT 1",
-      [userId, questionId],
+    // Use ON CONFLICT to prevent duplicate answers atomically
+    const insertResult = await client.query(
+      `INSERT INTO game_history (user_id, question_id, is_correct)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, question_id) DO NOTHING
+       RETURNING is_correct`,
+      [userId, questionId, isCorrect],
     );
-    if (existingAnswer.rows.length > 0) {
+
+    if (insertResult.rows.length === 0) {
+      // Duplicate — fetch existing answer
+      const existingAnswer = await client.query(
+        "SELECT is_correct FROM game_history WHERE user_id = $1 AND question_id = $2 LIMIT 1",
+        [userId, questionId],
+      );
       const userResult = await client.query(
         "SELECT total_score FROM users WHERE id = $1",
         [userId],
@@ -1076,14 +1121,10 @@ app.post("/api/answer", async ({ headers, body }) => {
         isNewScore: false,
         score: userResult.rows[0]?.total_score || 0,
         correctAnswer,
-        isCorrect: existingAnswer.rows[0].is_correct,
+        isCorrect: existingAnswer.rows[0]?.is_correct || false,
       };
     }
 
-    await client.query(
-      "INSERT INTO game_history (user_id, question_id, is_correct) VALUES ($1, $2, $3)",
-      [userId, questionId, isCorrect],
-    );
     await client.query(
       "UPDATE users SET total_score = total_score + $1 WHERE id = $2",
       [points, userId],
@@ -1175,21 +1216,35 @@ app.post("/api/rooms", async ({ headers, body }) => {
 
   try {
     await cleanupExpiredWaitingRooms();
+
+    const userRoomCount = await pool.query(
+      "SELECT COUNT(*) FROM rooms WHERE master_id = $1 AND status != 'finished'",
+      [userId]
+    );
+    if (parseInt(userRoomCount.rows[0].count) >= 50) {
+      return { success: false, message: "Too many active rooms" };
+    }
+
     const code = generateRoomCode();
-    const result = await pool.query(
-      `INSERT INTO rooms (code, master_id, settings) VALUES ($1, $2, $3) RETURNING *`,
-      [code, userId, JSON.stringify(settings)],
-    );
-    const room = result.rows[0];
 
-    // Master auto-joins as first player
-    await pool.query(
-      "INSERT INTO room_players (room_id, user_id, is_ready) VALUES ($1, $2, true)",
-      [room.id, userId],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `INSERT INTO rooms (code, master_id, settings) VALUES ($1, $2, $3) RETURNING *`,
+        [code, userId, JSON.stringify(settings)],
+      );
+      const room = result.rows[0];
 
-    // Create connection set
-    roomConnections.set(code, new Set());
+      // Master auto-joins as first player
+      await client.query(
+        "INSERT INTO room_players (room_id, user_id, is_ready) VALUES ($1, $2, true)",
+        [room.id, userId],
+      );
+      await client.query("COMMIT");
+
+      // Create connection set
+      roomConnections.set(code, new Set());
 
     return {
       success: true,
@@ -1199,6 +1254,12 @@ app.post("/api/rooms", async ({ headers, body }) => {
         status: room.status,
       },
     };
+    } catch (clientError) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw clientError;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error("Create room error:", error.message);
     return { success: false, message: "Failed to create room" };
@@ -1210,6 +1271,7 @@ app.post("/api/rooms/:code/join", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   try {
     const room = await findRoomByCode(params.code);
@@ -1268,6 +1330,7 @@ app.post("/api/rooms/:code/leave", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   try {
     const room = await findRoomByCode(params.code);
@@ -1276,6 +1339,16 @@ app.post("/api/rooms/:code/leave", async ({ headers, params }) => {
       "DELETE FROM room_players WHERE room_id = $1 AND user_id = $2",
       [room.id, userId],
     );
+
+    // Remove leaving player from WebSocket connections
+    const leaveConns = roomConnections.get(params.code.toUpperCase());
+    if (leaveConns) {
+      for (const conn of leaveConns) {
+        if (conn.userId === userId) {
+          leaveConns.delete(conn);
+        }
+      }
+    }
 
     // If master leaves, assign new master or destroy room
     if (room.master_id === userId) {
@@ -1312,12 +1385,15 @@ app.delete("/api/rooms/:code", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   try {
     const room = await findRoomByCode(params.code);
     if (!room) return { success: false, message: "Room not found" };
     if (room.master_id !== userId)
       return { success: false, message: "Only room master can delete" };
+    if (room.status === "playing")
+      return { success: false, message: "Cannot delete a room during an active game" };
 
     await destroyRoomSession(room, "deleted");
     return { success: true, roomDestroyed: true };
@@ -1332,6 +1408,7 @@ app.post("/api/rooms/:code/kick", async ({ headers, body, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   const { targetUserId } = body || {};
   if (!targetUserId) return { success: false, message: "Target user required" };
@@ -1356,6 +1433,17 @@ app.post("/api/rooms/:code/kick", async ({ headers, body, params }) => {
       kickedBy: userId,
     });
 
+    // Remove kicked player from WebSocket connections
+    const kickConns = roomConnections.get(room.code.toUpperCase());
+    if (kickConns) {
+      for (const conn of kickConns) {
+        if (conn.userId === targetUserId) {
+          try { conn.ws.send(JSON.stringify({ type: "kicked" })); } catch (e) {}
+          kickConns.delete(conn);
+        }
+      }
+    }
+
     return { success: true };
   } catch (error) {
     console.error("Kick error:", error.message);
@@ -1368,6 +1456,7 @@ app.post("/api/rooms/:code/ready", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   try {
     const room = await findRoomByCode(params.code);
@@ -1399,6 +1488,7 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   try {
     const room = await findRoomByCode(params.code);
@@ -1425,20 +1515,27 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
 
     clearRoomAdvanceTimer(room.code);
 
+    const startClient = await pool.connect();
+    try {
+    await startClient.query("BEGIN");
+
     // Assign questions to room
     const settings = withDefaultRoomSettings(room.settings);
     const totalQuestions =
       settings.question_source === "custom"
         ? settings.custom_questions?.length || 0
         : settings.question_count;
-    if (totalQuestions < 1)
+    if (totalQuestions < 1) {
+      await startClient.query("ROLLBACK").catch(() => {});
+      startClient.release();
       return { success: false, message: "No questions configured" };
+    }
 
     settings.question_count = totalQuestions;
     room.settings = settings;
 
-    await pool.query("DELETE FROM room_answers WHERE room_id = $1", [room.id]);
-    await pool.query("DELETE FROM room_questions WHERE room_id = $1", [
+    await startClient.query("DELETE FROM room_answers WHERE room_id = $1", [room.id]);
+    await startClient.query("DELETE FROM room_questions WHERE room_id = $1", [
       room.id,
     ]);
 
@@ -1446,7 +1543,7 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
       for (const player of playersResult.rows) {
         for (let i = 0; i < totalQuestions; i++) {
           if (settings.question_source === "custom") {
-            await pool.query(
+            await startClient.query(
               `INSERT INTO room_questions
                  (room_id, user_id, question_id, custom_question, question_order)
                VALUES ($1, $2, $3, $4, $5)`,
@@ -1459,12 +1556,15 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
               ],
             );
           } else {
-            const dbQuestion = await pool.query(
+            const dbQuestion = await startClient.query(
               "SELECT id FROM questions ORDER BY RANDOM() LIMIT 1",
             );
-            if (dbQuestion.rows.length === 0)
+            if (dbQuestion.rows.length === 0) {
+              await startClient.query("ROLLBACK").catch(() => {});
+              startClient.release();
               return { success: false, message: "No questions available" };
-            await pool.query(
+            }
+            await startClient.query(
               `INSERT INTO room_questions
                  (room_id, user_id, question_id, custom_question, question_order)
                VALUES ($1, $2, $3, $4, $5)`,
@@ -1475,7 +1575,7 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
       }
     } else if (settings.question_source === "custom") {
       for (let i = 0; i < totalQuestions; i++) {
-        await pool.query(
+        await startClient.query(
           `INSERT INTO room_questions
              (room_id, user_id, question_id, custom_question, question_order)
            VALUES ($1, $2, $3, $4, $5)`,
@@ -1489,15 +1589,18 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
         );
       }
     } else {
-      const dbQuestions = await pool.query(
+      const dbQuestions = await startClient.query(
         "SELECT id FROM questions ORDER BY RANDOM() LIMIT $1",
         [totalQuestions],
       );
-      if (dbQuestions.rows.length < totalQuestions)
+      if (dbQuestions.rows.length < totalQuestions) {
+        await startClient.query("ROLLBACK").catch(() => {});
+        startClient.release();
         return { success: false, message: "Not enough questions available" };
+      }
 
       for (const [i, question] of dbQuestions.rows.entries()) {
-        await pool.query(
+        await startClient.query(
           `INSERT INTO room_questions
              (room_id, user_id, question_id, custom_question, question_order)
            VALUES ($1, $2, $3, $4, $5)`,
@@ -1508,16 +1611,24 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
 
     // Update room status and set current question
     const questionStartedAt = new Date().toISOString();
-    await pool.query(
+    await startClient.query(
       "UPDATE rooms SET status = 'playing', current_question_order = 1, current_question_started_at = $1, settings = $2, last_activity_at = NOW() WHERE id = $3",
       [questionStartedAt, JSON.stringify(settings), room.id],
     );
 
     // Reset player scores
-    await pool.query(
+    await startClient.query(
       "UPDATE room_players SET score = 0, streak = 0 WHERE room_id = $1",
       [room.id],
     );
+
+    await startClient.query("COMMIT");
+    } catch (startTxError) {
+      await startClient.query("ROLLBACK").catch(() => {});
+      startClient.release();
+      throw startTxError;
+    }
+    startClient.release();
 
     // Get first question(s) based on mode
     const firstQuestions = await getQuestionsForRoom({ ...room, settings }, 1);
@@ -1813,6 +1924,7 @@ app.get("/api/rooms/:code", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   const state = await getRoomState(params.code.toUpperCase());
   if (!state) return { success: false, message: "Room not found" };
@@ -1826,6 +1938,7 @@ app.get("/api/rooms/:code/leaderboard", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   try {
     const room = await findRoomByCode(params.code);
@@ -1847,6 +1960,7 @@ app.get("/api/rooms/:code/state", async ({ headers, params }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   try {
     const room = await findRoomByCode(params.code);
@@ -1914,17 +2028,20 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
   const token = getBearerToken(headers);
   const userId = await validateSession(token);
   if (!userId) return { success: false, message: "Unauthorized" };
+  if (!isValidRoomCode(params.code)) return { success: false, message: "Invalid room code format" };
 
   const { questionId, answer, questionOrder } = body || {};
   const order = Number.parseInt(questionOrder, 10);
   if (typeof answer !== "string" || !Number.isInteger(order))
     return { success: false, message: "Missing fields" };
+  if (answer.length > 500) {
+    return { success: false, message: "Answer too long (max 500 characters)" };
+  }
 
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
-    await client.query("LOCK TABLE room_answers IN SHARE ROW EXCLUSIVE MODE");
 
     const roomResult = await client.query(
       "SELECT * FROM rooms WHERE code = $1",
@@ -2068,7 +2185,8 @@ app.post("/api/rooms/:code/answer", async ({ headers, params, body }) => {
     await client.query(
       `INSERT INTO room_answers
          (room_id, user_id, question_id, question_order, answer, is_correct)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (room_id, user_id, question_order) DO NOTHING`,
       [
         room.id,
         userId,
@@ -2231,6 +2349,8 @@ async function endGame(room) {
     summary: playerSummaries,
     winner: playerSummaries[0] || null,
   });
+
+  clearRoomRuntimeState(room.code);
 }
 
 // Get game summary
@@ -2275,6 +2395,10 @@ app.ws("/ws", {
     }
   },
   async open(ws) {
+    if (socketStates.size >= MAX_WS_CONNECTIONS) {
+      ws.close(1013, "Server full");
+      return;
+    }
     const state = getSocketState(ws);
     if (getSecureAuthEnabled()) {
       const token =
@@ -2289,8 +2413,22 @@ app.ws("/ws", {
         ws.send(JSON.stringify({ type: "auth_ok", userId }));
       }
     }
+
+    if (!getSecureAuthEnabled() && !state.userId) {
+      const authTimeout = setTimeout(() => {
+        if (!state.userId) {
+          ws.close(4001, "Authentication required");
+        }
+      }, 5000);
+      state.authTimeout = authTimeout;
+    }
   },
   async message(ws, raw) {
+    if (typeof raw === "string" && raw.length > 65536) {
+      ws.send(JSON.stringify({ type: "error", message: "Message too large" }));
+      return;
+    }
+
     let data;
     try {
       data = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -2301,6 +2439,11 @@ app.ws("/ws", {
 
     const { type, token, roomCode } = data;
 
+    if (!checkRateLimit(`ws:${getSocketId(ws)}`, 30, 1000)) {
+      ws.send(JSON.stringify({ type: "error", message: "Rate limit exceeded" }));
+      return;
+    }
+
     // Auth
     if (type === "auth") {
       const userId = await validateSession(token);
@@ -2310,6 +2453,10 @@ app.ws("/ws", {
       }
       const user = await getUser(userId);
       const state = getSocketState(ws);
+      if (state.authTimeout) {
+        clearTimeout(state.authTimeout);
+        state.authTimeout = null;
+      }
       state.userId = userId;
       state.username = user?.username;
       ws.send(JSON.stringify({ type: "auth_ok", userId }));
@@ -2341,7 +2488,14 @@ app.ws("/ws", {
       if (!roomConnections.has(code)) {
         roomConnections.set(code, new Set());
       }
-      roomConnections.get(code).add({
+      const conns = roomConnections.get(code);
+      for (const conn of conns) {
+        if (conn.userId === state.userId) {
+          conns.delete(conn);
+          break;
+        }
+      }
+      conns.add({
         ws,
         socketId: getSocketId(ws),
         userId: state.userId,
@@ -2396,6 +2550,41 @@ app.ws("/ws", {
         type: "user_disconnected",
         userId: left.userId,
       });
+
+      // Fix game stuck on disconnect: schedule fallback timeout
+      (async () => {
+        try {
+          const room = await findRoomByCode(left.code);
+          if (room && room.status === "playing") {
+            const settings = withDefaultRoomSettings(room.settings);
+            if (settings.time_per_question_seconds === 0) {
+              const fallbackTimeout = setTimeout(async () => {
+                try {
+                  const latestRoom = await findRoomByCode(left.code);
+                  if (latestRoom && latestRoom.status === "playing") {
+                    await markMissingAnswersWrong(
+                      { ...latestRoom, settings: withDefaultRoomSettings(latestRoom.settings) },
+                      latestRoom.current_question_order || 1
+                    );
+                    const updatedRoom = await findRoomByCode(left.code);
+                    if (updatedRoom && updatedRoom.status === "playing") {
+                      await scheduleRoomAdvance(
+                        { ...updatedRoom, settings: withDefaultRoomSettings(updatedRoom.settings) },
+                        updatedRoom.current_question_order || 1
+                      );
+                    }
+                  }
+                } catch (e) {
+                  // Ignore errors in disconnect fallback
+                }
+              }, 60000);
+              if (typeof fallbackTimeout.unref === "function") fallbackTimeout.unref();
+            }
+          }
+        } catch (e) {
+          // Ignore errors in disconnect fallback
+        }
+      })();
     }
     socketStates.delete(getSocketId(ws));
   },
@@ -2407,6 +2596,24 @@ const roomCleanupInterval = setInterval(() => {
   });
 }, 60_000);
 roomCleanupInterval.unref?.();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of activeSessions) {
+    if (session.expiresAt <= now) {
+      activeSessions.delete(token);
+    }
+  }
+  const windowMs = 60000;
+  for (const [key, timestamps] of rateLimitStore) {
+    const filtered = timestamps.filter(t => now - t < windowMs);
+    if (filtered.length === 0) {
+      rateLimitStore.delete(key);
+    } else {
+      rateLimitStore.set(key, filtered);
+    }
+  }
+}, 300000);
 
 // ═══════════════════════════════════════════════════════════════════
 //  START SERVER
