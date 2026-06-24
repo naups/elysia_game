@@ -1516,23 +1516,22 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
     clearRoomAdvanceTimer(room.code);
 
     const startClient = await pool.connect();
-    try {
-    await startClient.query("BEGIN");
-
-    // Assign questions to room
     const settings = withDefaultRoomSettings(room.settings);
     const totalQuestions =
       settings.question_source === "custom"
         ? settings.custom_questions?.length || 0
         : settings.question_count;
     if (totalQuestions < 1) {
-      await startClient.query("ROLLBACK").catch(() => {});
       startClient.release();
       return { success: false, message: "No questions configured" };
     }
 
     settings.question_count = totalQuestions;
     room.settings = settings;
+    const questionStartedAt = new Date().toISOString();
+
+    try {
+    await startClient.query("BEGIN");
 
     await startClient.query("DELETE FROM room_answers WHERE room_id = $1", [room.id]);
     await startClient.query("DELETE FROM room_questions WHERE room_id = $1", [
@@ -1610,7 +1609,6 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
     }
 
     // Update room status and set current question
-    const questionStartedAt = new Date().toISOString();
     await startClient.query(
       "UPDATE rooms SET status = 'playing', current_question_order = 1, current_question_started_at = $1, settings = $2, last_activity_at = NOW() WHERE id = $3",
       [questionStartedAt, JSON.stringify(settings), room.id],
@@ -1657,7 +1655,7 @@ app.post("/api/rooms/:code/start", async ({ headers, params }) => {
       questionStartedAt,
     };
   } catch (error) {
-    console.error("Start game error:", error.message);
+    console.error("Start game error:", error.message, error.stack);
     return { success: false, message: "Failed to start game" };
   }
 });
